@@ -74,6 +74,7 @@ as template. It automatically updates:
 
 - `dataset_file_name` -> QM output extxyz path
 - `n_train` and `n_val` -> computed from dataset size and `train_val_ratio`
+- trains an ensemble of 2 independent models by changing only `seed`
 
 Run:
 
@@ -82,7 +83,12 @@ export ORCA_PATH=/path/to/orca
 bash test/run_step3.sh
 ```
 
-This writes an auto config at `test/full.auto.yaml`.
+This writes seed-specific auto configs such as `test/full.auto.seed123.yaml`.
+
+Ensemble behavior:
+
+- default seeds are derived from template `seed` (e.g. `123`, `124`)
+- override explicitly with `--train-model-seeds 123,456`
 
 Config-only dry run (no NequIP training):
 

@@ -1,12 +1,23 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import List
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from openmlp.graph import build_step3_graph
+
+
+def parse_seed_list(seed_values: str) -> List[int]:
+    values = [value.strip() for value in seed_values.split(",") if value.strip()]
+    if not values:
+        raise argparse.ArgumentTypeError("train-model-seeds cannot be empty.")
+    try:
+        return [int(value) for value in values]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("train-model-seeds must be comma-separated integers.") from exc
 
 
 def parse_args():
@@ -67,6 +78,18 @@ def parse_args():
     parser.add_argument("--train-n-train", type=int, default=None)
     parser.add_argument("--train-n-val", type=int, default=None)
     parser.add_argument(
+        "--train-num-models",
+        type=int,
+        default=2,
+        help="Number of independent NequIP models (different seeds only).",
+    )
+    parser.add_argument(
+        "--train-model-seeds",
+        type=parse_seed_list,
+        default=None,
+        help="Comma-separated explicit model seeds, e.g. 123,456",
+    )
+    parser.add_argument(
         "--nequip-command",
         default="nequip-train",
         help="NequIP CLI command.",
@@ -103,16 +126,19 @@ def main():
             "train_val_ratio": args.train_val_ratio,
             "train_n_train": args.train_n_train,
             "train_n_val": args.train_n_val,
+            "train_num_models": args.train_num_models,
+            "train_model_seeds": args.train_model_seeds,
             "nequip_command": args.nequip_command,
             "train_run": not args.no_train_run,
         }
     )
     print(result["notes"])
     print("QM extxyz:", result.get("qm_output_extxyz", "N/A"))
-    print("Train config:", result.get("train_config_path", "N/A"))
+    print("Train configs:", ", ".join(result.get("train_model_config_paths", [])))
+    print("Model seeds:", result.get("train_model_seeds", []))
     print("n_train:", result.get("train_n_train", "N/A"))
     print("n_val:", result.get("train_n_val", "N/A"))
-    print("Train log:", result.get("train_log_path", "N/A"))
+    print("Train logs:", ", ".join(result.get("train_model_log_paths", [])))
 
 
 if __name__ == "__main__":

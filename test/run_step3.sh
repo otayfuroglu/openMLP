@@ -21,4 +21,5 @@ python "$SCRIPT_DIR/run_step3.py" \
   --train-config-path "$SCRIPT_DIR/full.auto.yaml" \
   --train-workdir "$SCRIPT_DIR" \
   --train-val-ratio 0.1 \
+  --train-num-models 2 \
   --nequip-command "nequip-train"

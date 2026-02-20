@@ -26,8 +26,12 @@ class PipelineState(TypedDict, total=False):
     train_n_train: int
     train_n_val: int
     train_val_ratio: float
+    train_num_models: int
+    train_model_seeds: List[int]
     train_root: str
     train_run: bool
     nequip_command: str
     train_log_path: str
+    train_model_config_paths: List[str]
+    train_model_log_paths: List[str]
     notes: str
