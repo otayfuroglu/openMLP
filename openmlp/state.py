@@ -19,4 +19,15 @@ class PipelineState(TypedDict, total=False):
     qm_workdir: str
     qm_output_extxyz: str
     qm_output_csv: str
+    train_config_template: str
+    train_config_path: str
+    train_dataset_extxyz: str
+    train_workdir: str
+    train_n_train: int
+    train_n_val: int
+    train_val_ratio: float
+    train_root: str
+    train_run: bool
+    nequip_command: str
+    train_log_path: str
     notes: str

@@ -10,6 +10,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install langgraph ase numpy
 pip install tqdm
+pip install pyyaml
+# install nequip from your environment recipe (pip/conda)
 ```
 
 ## Run step 1
@@ -63,4 +65,29 @@ python test/run_step2.py \
   --qm-n-core 24 \
   --qm-orca-path /path/to/orca \
   --qm-workdir test
+```
+
+## Run step 3 (QM + NequIP training)
+
+Step 3 extends the workflow with NequIP training using `openmlp/train/full.yaml`
+as template. It automatically updates:
+
+- `dataset_file_name` -> QM output extxyz path
+- `n_train` and `n_val` -> computed from dataset size and `train_val_ratio`
+
+Run:
+
+```bash
+export ORCA_PATH=/path/to/orca
+bash test/run_step3.sh
+```
+
+This writes an auto config at `test/full.auto.yaml`.
+
+Config-only dry run (no NequIP training):
+
+```bash
+python test/run_step3.py \
+  --qm-orca-path /path/to/orca \
+  --no-train-run
 ```
