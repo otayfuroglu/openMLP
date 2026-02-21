@@ -140,6 +140,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
     nequip_command = state.get("nequip_command", "nequip-train")
     model_config_paths: List[str] = []
     model_log_paths: List[str] = []
+    model_cmd_parts: List[List[str]] = []
     base_stem = config_path.stem
     base_suffix = config_path.suffix or ".yaml"
     for model_index, seed in enumerate(model_seeds, start=1):
@@ -157,35 +158,48 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
             run_name_suffix=f"m{model_index}_{seed_suffix}",
         )
         model_config_paths.append(str(model_config_path))
+        model_cmd_parts.append(shlex.split(nequip_command) + [str(model_config_path)])
 
         model_log_path = workdir / f"nequip_train_{seed_suffix}.log"
         model_log_paths.append(str(model_log_path))
-        if run_training:
-            cmd_parts = shlex.split(nequip_command) + [str(model_config_path)]
-            completed = subprocess.run(
-                cmd_parts,
-                cwd=str(workdir),
-                capture_output=True,
-                text=True,
-                check=False,
+    if run_training:
+        processes: List[subprocess.Popen] = []
+        for cmd_parts in model_cmd_parts:
+            processes.append(
+                subprocess.Popen(
+                    cmd_parts,
+                    cwd=str(workdir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
             )
-            model_log_path.write_text(
-                (completed.stdout or "") + "\n" + (completed.stderr or ""),
+
+        failures: List[Tuple[List[str], Path, int]] = []
+        for cmd_parts, model_log_path, process in zip(model_cmd_parts, model_log_paths, processes):
+            stdout_text, stderr_text = process.communicate()
+            Path(model_log_path).write_text(
+                (stdout_text or "") + "\n" + (stderr_text or ""),
                 encoding="utf-8",
             )
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    "NequIP training failed.\n"
-                    f"Command: {' '.join(cmd_parts)}\n"
-                    f"See log: {model_log_path}"
-                )
+            if process.returncode != 0:
+                failures.append((cmd_parts, Path(model_log_path), int(process.returncode)))
+
+        if failures:
+            cmd_parts, model_log_path, return_code = failures[0]
+            raise RuntimeError(
+                "NequIP training failed.\n"
+                f"Command: {' '.join(cmd_parts)}\n"
+                f"Return code: {return_code}\n"
+                f"See log: {model_log_path}"
+            )
 
     note = (
         f"Prepared {len(model_seeds)} NequIP configs with dataset={dataset_path.name}, "
         f"n_train={n_train}, n_val={n_val}, seeds={model_seeds}."
     )
     if run_training:
-        note += " Ensemble training completed."
+        note += " Ensemble training completed in parallel."
     else:
         note += " Training skipped (train_run=false)."
 
