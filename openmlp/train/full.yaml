@@ -11,7 +11,7 @@
 # if 'root'/'run_name' exists, 'root'/'run_name'_'year'-'month'-'day'-'hour'-'min'-'s' will be used instead.
 root: results/nnp1
 # run_name: nonbonded_CO2_v10_e10_p1000_r6_float32_lmax2_rPBE
-run_name: multi_metal_NiMg_bulk_mixture_co2_ch4_cohesive_r2SCAN_D4_v6_2_float32_lmax2
+run_name: MgF2_PBED4_v1_float32
 seed: 123                                                                         # model seed
 # seed: 321                                                                         # model seed
 dataset_seed: 456                                                                 # data set seed
@@ -42,7 +42,7 @@ model_builders:
 r_max: 6.0                                                                        # cutoff radius in length units, here Angstrom, this is an important hyperparamter to scan
 num_layers: 4                                                                     # number of interaction blocks, we find 3-5 to work best
 
-l_max: 2                                                                          # the maximum irrep order (rotation order) for the network's features, l=1 is a good default, l=2 is more accurate but slower
+l_max: 1                                                                          # the maximum irrep order (rotation order) for the network's features, l=1 is a good default, l=2 is more accurate but slower
 parity: true                                                                      # whether to include features with odd mirror parityy; often turning parity off gives equally good results but faster networks, so do consider this
 num_features: 32                                                                  # the multiplicity of the features, 32 is a good default for accurate network, if you want to be more accurate, go larger, if you want to be faster, go lower
 
@@ -96,7 +96,7 @@ use_sc: true                                                                    
 
 # for extxyz file
 dataset: ase
-dataset_file_name: /truba/home/otayfuroglu/deepMOF_dev_works/nequip/works/mof74/data/multi_metal/NiCoMg_CO2_CH4/r2scan_d4/cohesive_engrad_non_equ_geoms_NiMg_bulk_mixture_co2_ch4_all_v6_2.extxyz
+dataset_file_name: data.extxyz
 ase_args:
   format: extxyz
 include_keys:
@@ -140,8 +140,6 @@ chemical_symbols:
   - C
   - O
   - Mg
-  - Co
-  - Ni
 
 # Alternatively, you may explicitly specify which chemical species in the input will map to NequIP atom type 0, which to atom type 1, and so on.
 # Other than providing an explicit order for the NequIP atom types, this option behaves the same as `chemical_symbols`
@@ -357,25 +355,3 @@ global_rescale_shift_trainable: false
 # whether the scale of the final global energy rescaling should be trainable
 global_rescale_scale_trainable: false
 
-# # full block needed for per specie rescale
-# global_rescale_shift: null
-# global_rescale_shift_trainable: false
-# global_rescale_scale: dataset_forces_rms
-# global_rescale_scale_trainable: false
-# per_species_rescale_shifts_trainable: false
-# per_species_rescale_scales_trainable: true
-# per_species_rescale_shifts: dataset_per_species_total_energy_mean
-# per_species_rescale_scales: dataset_per_species_forces_rms
-
-# # full block needed for global rescale
-# global_rescale_shift: dataset_total_energy_mean
-# global_rescale_shift_trainable: false
-# global_rescale_scale: dataset_forces_rms
-# global_rescale_scale_trainable: false
-# per_species_rescale_trainable: false
-# per_species_rescale_shifts: null
-# per_species_rescale_scales: null
-
-# Options for e3nn's set_optimization_defaults. A dict:
-# e3nn_optimization_defaults:
-#   explicit_backward: True
