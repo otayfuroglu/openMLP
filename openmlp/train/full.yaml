@@ -205,7 +205,7 @@ report_init_validation: true                                                    
 # LR, wall and any keys printed in the log file can be used. 
 # The key can start with Training or validation. If not defined, the validation value will be used.
 early_stopping_patiences:                                                          # stop early if a metric value stopped decreasing for n epochs
-  validation_loss: 950
+  validation_loss: 50
 
 early_stopping_delta:                                                              # If delta is defined, a decrease smaller than delta will not be considered as a decrease
   validation_loss: 0.005
