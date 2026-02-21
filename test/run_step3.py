@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from openmlp.graph import build_step3_graph
+from openmlp.graph import build_step3_graph, build_train_only_graph
 
 
 def parse_seed_list(seed_values: str) -> List[int]:
@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument("--qm-n-core", type=int, default=24, help="Total cores for QM step.")
     parser.add_argument(
         "--qm-orca-path",
-        required=True,
+        default="",
         help="Path to ORCA executable for openmlp/qm_calc/runCalculateGeomWithQM.py.",
     )
     parser.add_argument(
@@ -99,39 +99,56 @@ def parse_args():
         action="store_true",
         help="Only prepare auto config and skip actual NequIP training run.",
     )
+    parser.add_argument(
+        "--train-only",
+        action="store_true",
+        help="Skip non-equ and QM; run NequIP training only from --train-dataset-extxyz.",
+    )
+    parser.add_argument(
+        "--train-dataset-extxyz",
+        default=str(Path(__file__).resolve().parent / "MgF2.extxyz"),
+        help="Existing extxyz dataset for train-only mode.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    app = build_step3_graph()
-    result = app.invoke(
-        {
-            "input_structure": args.input,
-            "output_structures": args.non_eq_output,
-            "n_structures": args.n_structures,
-            "scale_min": args.scale_min,
-            "scale_max": args.scale_max,
-            "max_atom_displacement": args.max_atom_displacement,
-            "displacement_attempts": args.displacement_attempts,
-            "qm_input_extxyz": args.non_eq_output,
-            "qm_calc_type": args.qm_calc_type,
-            "qm_calculator_type": args.qm_calculator_type,
-            "qm_n_core": args.qm_n_core,
-            "qm_orca_path": args.qm_orca_path,
-            "qm_workdir": args.qm_workdir,
-            "train_config_template": args.train_config_template,
-            "train_config_path": args.train_config_path,
-            "train_workdir": args.train_workdir,
-            "train_val_ratio": args.train_val_ratio,
-            "train_n_train": args.train_n_train,
-            "train_n_val": args.train_n_val,
-            "train_num_models": args.train_num_models,
-            "train_model_seeds": args.train_model_seeds,
-            "nequip_command": args.nequip_command,
-            "train_run": not args.no_train_run,
-        }
-    )
+    payload = {
+        "train_config_template": args.train_config_template,
+        "train_config_path": args.train_config_path,
+        "train_workdir": args.train_workdir,
+        "train_val_ratio": args.train_val_ratio,
+        "train_n_train": args.train_n_train,
+        "train_n_val": args.train_n_val,
+        "train_num_models": args.train_num_models,
+        "train_model_seeds": args.train_model_seeds,
+        "nequip_command": args.nequip_command,
+        "train_run": not args.no_train_run,
+    }
+    if args.train_only:
+        app = build_train_only_graph()
+        payload["train_dataset_extxyz"] = args.train_dataset_extxyz
+    else:
+        app = build_step3_graph()
+        payload.update(
+            {
+                "input_structure": args.input,
+                "output_structures": args.non_eq_output,
+                "n_structures": args.n_structures,
+                "scale_min": args.scale_min,
+                "scale_max": args.scale_max,
+                "max_atom_displacement": args.max_atom_displacement,
+                "displacement_attempts": args.displacement_attempts,
+                "qm_input_extxyz": args.non_eq_output,
+                "qm_calc_type": args.qm_calc_type,
+                "qm_calculator_type": args.qm_calculator_type,
+                "qm_n_core": args.qm_n_core,
+                "qm_orca_path": args.qm_orca_path,
+                "qm_workdir": args.qm_workdir,
+            }
+        )
+    result = app.invoke(payload)
     print(result["notes"])
     print("QM extxyz:", result.get("qm_output_extxyz", "N/A"))
     print("Train configs:", ", ".join(result.get("train_model_config_paths", [])))

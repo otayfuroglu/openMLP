@@ -34,3 +34,11 @@ def build_step3_graph():
     graph.add_edge("run_qm", "train_nequip")
     graph.add_edge("train_nequip", END)
     return graph.compile()
+
+
+def build_train_only_graph():
+    graph = StateGraph(PipelineState)
+    graph.add_node("train_nequip", train_nequip_node)
+    graph.set_entry_point("train_nequip")
+    graph.add_edge("train_nequip", END)
+    return graph.compile()
