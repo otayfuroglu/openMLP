@@ -10,6 +10,20 @@ import yaml
 from openmlp.state import PipelineState
 
 
+class _TupleSafeLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_python_tuple(loader: yaml.Loader, node: yaml.Node) -> tuple:
+    return tuple(loader.construct_sequence(node))
+
+
+_TupleSafeLoader.add_constructor(
+    "tag:yaml.org,2002:python/tuple",
+    _construct_python_tuple,
+)
+
+
 def _load_structures_count(extxyz_path: Path) -> int:
     atoms_data = read(str(extxyz_path), index=":")
     if isinstance(atoms_data, Atoms):
@@ -60,7 +74,7 @@ def _prepare_nequip_config(
     run_name_suffix: str,
 ) -> Dict[str, Any]:
     with template_path.open("r", encoding="utf-8") as handle:
-        config = yaml.safe_load(handle)
+        config = yaml.load(handle, Loader=_TupleSafeLoader)
     if not isinstance(config, dict):
         raise ValueError(f"NequIP config template is not a mapping: {template_path}")
 
@@ -116,7 +130,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
         train_val_ratio=float(state.get("train_val_ratio", 0.1)),
     )
     with template_path.open("r", encoding="utf-8") as handle:
-        template_config = yaml.safe_load(handle)
+        template_config = yaml.load(handle, Loader=_TupleSafeLoader)
     if not isinstance(template_config, dict):
         raise ValueError(f"NequIP config template is not a mapping: {template_path}")
     base_seed = int(template_config.get("seed", 123))
