@@ -39,4 +39,20 @@ class PipelineState(TypedDict, total=False):
     train_model_log_paths: List[str]
     train_model_run_dirs: List[str]
     deployed_model_paths: List[str]
+    al_input_structure: str
+    al_model1_path: str
+    al_model2_path: str
+    al_output_extxyz: str
+    al_md_steps: int
+    al_timestep_fs: float
+    al_temperature_k: float
+    al_friction: float
+    al_energy_eval_interval: int
+    al_threshold_warmup_steps: int
+    al_target_conformers: int
+    al_rng_seed: int
+    al_device: str
+    al_threshold: float
+    al_selected_count: int
+    al_uncertainties: List[float]
     notes: str

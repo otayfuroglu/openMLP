@@ -109,3 +109,37 @@ python test/run_step3.py \
   --train-dataset-extxyz test/MgF2.extxyz \
   --nequip-bin-dir /path/to/nequip/bin
 ```
+
+## Run step 4 (active learning MD)
+
+Step 4 runs NVT MD with `nnp1` (ASE), evaluates uncertainty
+`|E_nnp1 - E_nnp2|` every fixed interval, and selects conformers online.
+
+Selection policy:
+
+- accumulate uncertainties during warmup window (for example first 500 MD steps)
+- set threshold = average warmup uncertainty
+- after warmup, select frames where uncertainty >= threshold
+- stop MD early when selected conformers reaches user target
+
+Run:
+
+```bash
+export NNP1_MODEL=/path/to/deployed_model_seed123.pth
+export NNP2_MODEL=/path/to/deployed_model_seed124.pth
+bash test/run_step4.sh
+```
+
+Direct command:
+
+```bash
+python test/run_step4.py \
+  --input-structure test/MgF2.xyz \
+  --model1-path /path/to/deployed_model_seed123.pth \
+  --model2-path /path/to/deployed_model_seed124.pth \
+  --output-extxyz test/al_selected_non_eq_geoms.extxyz \
+  --md-steps 5000 \
+  --energy-eval-interval 20 \
+  --threshold-warmup-steps 500 \
+  --target-conformers 50
+```

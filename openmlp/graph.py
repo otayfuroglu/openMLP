@@ -1,3 +1,4 @@
+from openmlp.active_learning import active_learning_node
 from langgraph.graph import END, StateGraph
 
 from openmlp.non_equilibrium import non_equilibrium_node
@@ -41,4 +42,12 @@ def build_train_only_graph():
     graph.add_node("train_nequip", train_nequip_node)
     graph.set_entry_point("train_nequip")
     graph.add_edge("train_nequip", END)
+    return graph.compile()
+
+
+def build_step4_graph():
+    graph = StateGraph(PipelineState)
+    graph.add_node("active_learning", active_learning_node)
+    graph.set_entry_point("active_learning")
+    graph.add_edge("active_learning", END)
     return graph.compile()
