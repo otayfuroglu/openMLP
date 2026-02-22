@@ -75,6 +75,7 @@ as template. It automatically updates:
 - `dataset_file_name` -> QM output extxyz path
 - `n_train` and `n_val` -> computed from dataset size and `train_val_ratio`
 - trains an ensemble of 2 independent models by changing only `seed`
+- deploys each trained model using `nequip-deploy build`
 
 Run:
 
@@ -89,6 +90,8 @@ Ensemble behavior:
 
 - default seeds are derived from template `seed` (e.g. `123`, `124`)
 - override explicitly with `--train-model-seeds 123,456`
+- if `nequip-train` and `nequip-deploy` are in a custom env path, pass
+  `--nequip-bin-dir /path/to/bin` (or export `NEQUIP_BIN_DIR` for `test/run_step3.sh`)
 
 Config-only dry run (no NequIP training):
 
@@ -96,4 +99,13 @@ Config-only dry run (no NequIP training):
 python test/run_step3.py \
   --qm-orca-path /path/to/orca \
   --no-train-run
+```
+
+Train-only mode (skip non-equ + QM, train and deploy from existing extxyz):
+
+```bash
+python test/run_step3.py \
+  --train-only \
+  --train-dataset-extxyz test/MgF2.extxyz \
+  --nequip-bin-dir /path/to/nequip/bin
 ```

@@ -30,8 +30,13 @@ class PipelineState(TypedDict, total=False):
     train_model_seeds: List[int]
     train_root: str
     train_run: bool
+    deploy_run: bool
+    nequip_bin_dir: str
     nequip_command: str
+    nequip_deploy_command: str
     train_log_path: str
     train_model_config_paths: List[str]
     train_model_log_paths: List[str]
+    train_model_run_dirs: List[str]
+    deployed_model_paths: List[str]
     notes: str

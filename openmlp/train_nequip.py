@@ -104,6 +104,29 @@ def _resolve_model_seeds(state: PipelineState, base_seed: int) -> List[int]:
     return [base_seed + index for index in range(num_models)]
 
 
+def _resolve_command_parts(command: str, bin_dir: Optional[str], executable_name: str) -> List[str]:
+    parts = shlex.split(command)
+    if not parts:
+        raise ValueError(f"Command is empty for {executable_name}.")
+    if bin_dir and parts[0] == executable_name:
+        parts[0] = str((Path(bin_dir).resolve() / executable_name))
+    return parts
+
+
+def _resolve_train_dir(root_dir: Path, run_name: str) -> Path:
+    exact_dir = root_dir / run_name
+    if exact_dir.exists():
+        return exact_dir
+    candidates = sorted(
+        root_dir.glob(f"{run_name}*"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(f"Could not find NequIP train directory for run_name={run_name} under {root_dir}")
+    return candidates[0]
+
+
 def train_nequip_node(state: PipelineState) -> PipelineState:
     dataset_path_str = state.get("train_dataset_extxyz") or state.get("qm_output_extxyz")
     if not dataset_path_str:
@@ -137,16 +160,31 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
     model_seeds = _resolve_model_seeds(state, base_seed)
 
     run_training = bool(state.get("train_run", True))
-    nequip_command = state.get("nequip_command", "nequip-train")
+    deploy_run = bool(state.get("deploy_run", run_training))
+    nequip_bin_dir = state.get("nequip_bin_dir")
+    train_command_parts_base = _resolve_command_parts(
+        state.get("nequip_command", "nequip-train"),
+        nequip_bin_dir,
+        "nequip-train",
+    )
+    deploy_command_parts_base = _resolve_command_parts(
+        state.get("nequip_deploy_command", "nequip-deploy"),
+        nequip_bin_dir,
+        "nequip-deploy",
+    )
     model_config_paths: List[str] = []
     model_log_paths: List[str] = []
     model_cmd_parts: List[List[str]] = []
+    model_root_dirs: List[str] = []
+    model_run_names: List[str] = []
+    model_run_dirs: List[str] = []
+    deployed_model_paths: List[str] = []
     base_stem = config_path.stem
     base_suffix = config_path.suffix or ".yaml"
     for model_index, seed in enumerate(model_seeds, start=1):
         seed_suffix = f"seed{seed}"
         model_config_path = config_path.with_name(f"{base_stem}.{seed_suffix}{base_suffix}")
-        _prepare_nequip_config(
+        prepared_config = _prepare_nequip_config(
             template_path=template_path,
             output_config_path=model_config_path,
             dataset_extxyz_path=dataset_path,
@@ -158,7 +196,9 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
             run_name_suffix=f"m{model_index}_{seed_suffix}",
         )
         model_config_paths.append(str(model_config_path))
-        model_cmd_parts.append(shlex.split(nequip_command) + [str(model_config_path)])
+        model_cmd_parts.append(train_command_parts_base + [str(model_config_path)])
+        model_root_dirs.append(str(Path(prepared_config["root"]).resolve()))
+        model_run_names.append(str(prepared_config["run_name"]))
 
         model_log_path = workdir / f"nequip_train_{seed_suffix}.log"
         model_log_paths.append(str(model_log_path))
@@ -194,6 +234,39 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                 f"See log: {model_log_path}"
             )
 
+    for model_root_dir, model_run_name in zip(model_root_dirs, model_run_names):
+        model_run_dir = _resolve_train_dir(Path(model_root_dir), model_run_name)
+        model_run_dirs.append(str(model_run_dir))
+
+    if deploy_run:
+        for seed, model_run_dir in zip(model_seeds, model_run_dirs):
+            deploy_out_path = workdir / f"deployed_model_seed{seed}.pth"
+            deploy_log_path = workdir / f"nequip_deploy_seed{seed}.log"
+            deploy_cmd_parts = deploy_command_parts_base + [
+                "build",
+                "--train-dir",
+                model_run_dir,
+                str(deploy_out_path),
+            ]
+            completed = subprocess.run(
+                deploy_cmd_parts,
+                cwd=str(workdir),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            deploy_log_path.write_text(
+                (completed.stdout or "") + "\n" + (completed.stderr or ""),
+                encoding="utf-8",
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    "NequIP deploy failed.\n"
+                    f"Command: {' '.join(deploy_cmd_parts)}\n"
+                    f"See log: {deploy_log_path}"
+                )
+            deployed_model_paths.append(str(deploy_out_path))
+
     note = (
         f"Prepared {len(model_seeds)} NequIP configs with dataset={dataset_path.name}, "
         f"n_train={n_train}, n_val={n_val}, seeds={model_seeds}."
@@ -202,6 +275,10 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
         note += " Ensemble training completed in parallel."
     else:
         note += " Training skipped (train_run=false)."
+    if deploy_run:
+        note += " Deployment completed."
+    else:
+        note += " Deployment skipped (deploy_run=false)."
 
     return {
         "train_config_path": model_config_paths[0],
@@ -214,5 +291,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
         "train_workdir": str(workdir),
         "train_log_path": model_log_paths[0],
         "train_model_log_paths": model_log_paths,
+        "train_model_run_dirs": model_run_dirs,
+        "deployed_model_paths": deployed_model_paths,
         "notes": note,
     }

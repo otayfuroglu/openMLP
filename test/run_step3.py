@@ -95,9 +95,24 @@ def parse_args():
         help="NequIP CLI command.",
     )
     parser.add_argument(
+        "--nequip-deploy-command",
+        default="nequip-deploy",
+        help="NequIP deploy CLI command.",
+    )
+    parser.add_argument(
+        "--nequip-bin-dir",
+        default="",
+        help="Directory that contains both nequip-train and nequip-deploy executables.",
+    )
+    parser.add_argument(
         "--no-train-run",
         action="store_true",
         help="Only prepare auto config and skip actual NequIP training run.",
+    )
+    parser.add_argument(
+        "--no-deploy-run",
+        action="store_true",
+        help="Skip nequip-deploy after training.",
     )
     parser.add_argument(
         "--train-only",
@@ -123,8 +138,11 @@ def main():
         "train_n_val": args.train_n_val,
         "train_num_models": args.train_num_models,
         "train_model_seeds": args.train_model_seeds,
+        "nequip_bin_dir": args.nequip_bin_dir,
         "nequip_command": args.nequip_command,
+        "nequip_deploy_command": args.nequip_deploy_command,
         "train_run": not args.no_train_run,
+        "deploy_run": not args.no_deploy_run,
     }
     if args.train_only:
         app = build_train_only_graph()
@@ -156,6 +174,7 @@ def main():
     print("n_train:", result.get("train_n_train", "N/A"))
     print("n_val:", result.get("train_n_val", "N/A"))
     print("Train logs:", ", ".join(result.get("train_model_log_paths", [])))
+    print("Deploy models:", ", ".join(result.get("deployed_model_paths", [])))
 
 
 if __name__ == "__main__":
