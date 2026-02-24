@@ -149,3 +149,50 @@ python test/run_step4.py \
   --threshold-warmup-steps 500 \
   --target-conformers 50
 ```
+
+## Run step 5 (iterative AL cycles)
+
+Step 5 repeats this loop:
+
+1. train/deploy 2 NNP models on current dataset
+2. run AL MD and select uncertain conformers
+3. run QM on selected conformers
+4. merge new QM-labeled structures into enriched dataset
+
+Run 5 cycles:
+
+```bash
+export ORCA_PATH=/path/to/orca
+export BOOTSTRAP_STRUCTURE=/path/to/MgF2.xyz
+export NEQUIP_BIN_DIR=/path/to/nequip/bin
+bash test/run_step5_cycles.sh
+```
+
+Direct command:
+
+```bash
+python test/run_step5_cycles.py \
+  --bootstrap-input-structure /path/to/MgF2.xyz \
+  --bootstrap-n-structures 50 \
+  --al-input-structure test/MgF2.xyz \
+  --cycles 5 \
+  --workdir test/cycle_runs \
+  --qm-orca-path /path/to/orca \
+  --nequip-bin-dir /path/to/nequip/bin \
+  --al-target-conformers 50
+```
+
+If you already have an initial QM-labeled dataset, skip bootstrap:
+
+```bash
+python test/run_step5_cycles.py \
+  --initial-dataset-extxyz /path/to/initial_qm_dataset.extxyz \
+  --cycles 5 \
+  --qm-orca-path /path/to/orca
+```
+
+Outputs:
+
+- per-cycle folders under `workdir/cycle_XX`
+- enriched dataset after each cycle (`enriched_dataset_cycle_XX.extxyz`)
+- summary report (`workdir/cycle_report.json`)
