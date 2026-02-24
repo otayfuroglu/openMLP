@@ -124,6 +124,9 @@ Selection policy:
 - every structure-check interval, terminate early if:
   collapse (`min distance < min-interatomic-distance`) or
   explosion (`max distance > initial_max_distance * max-distance-scale`)
+- if terminated early, fallback sampling selects correlated stable frames from
+  the smooth pre-failure trajectory every `recovery-stride-steps` (default `10`)
+  to continue preparing DFT candidates
 
 Run:
 

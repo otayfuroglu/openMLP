@@ -100,6 +100,8 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     check_interval = int(state.get("al_structure_check_interval", 20))
     min_interatomic_distance = float(state.get("al_min_interatomic_distance", 0.6))
     max_distance_scale = float(state.get("al_max_distance_scale", 2.5))
+    recovery_stride_steps = int(state.get("al_recovery_stride_steps", 10))
+    recovery_enabled = bool(state.get("al_recovery_enabled", True))
     warmup_steps = int(state.get("al_threshold_warmup_steps", 500))
     target_conformers = int(state.get("al_target_conformers", 50))
     rng_seed = int(state.get("al_rng_seed", 123))
@@ -115,6 +117,8 @@ def active_learning_node(state: PipelineState) -> PipelineState:
         raise ValueError("al_threshold_warmup_steps must be >= 1.")
     if target_conformers < 1:
         raise ValueError("al_target_conformers must be >= 1.")
+    if recovery_stride_steps < 1:
+        raise ValueError("al_recovery_stride_steps must be >= 1.")
 
     atoms: Atoms = read(str(input_path))
     np.random.seed(rng_seed)
@@ -133,9 +137,12 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     uncertainties: List[float] = []
     warmup_uncertainties: List[float] = []
     selected_count = 0
+    recovery_selected_count = 0
     threshold: Optional[float] = None
     terminated_early = False
     termination_reason = ""
+    selected_steps = set()
+    stable_frames: List[tuple[int, Atoms]] = []
 
     progress = tqdm(range(1, md_steps + 1), desc="AL NVT MD", unit="step")
     for step in progress:
@@ -153,6 +160,9 @@ def active_learning_node(state: PipelineState) -> PipelineState:
                 termination_reason = f"Terminated at step {step}. {health_reason}"
                 progress.set_postfix(status="terminated", reason="structure_unstable")
                 break
+
+        if step % recovery_stride_steps == 0:
+            stable_frames.append((step, atoms.copy()))
 
         if step % eval_interval != 0:
             continue
@@ -193,6 +203,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
             chosen.info["al_energy_model2"] = energy2
             write(str(output_path), chosen, format="extxyz", append=True)
             selected_count += 1
+            selected_steps.add(step)
             progress.set_postfix(
                 selected=selected_count,
                 threshold=f"{threshold:.5f}",
@@ -200,6 +211,23 @@ def active_learning_node(state: PipelineState) -> PipelineState:
             )
             if selected_count >= target_conformers:
                 break
+
+    if terminated_early and recovery_enabled and selected_count < target_conformers:
+        needed = target_conformers - selected_count
+        for frame_step, frame_atoms in reversed(stable_frames):
+            if needed <= 0:
+                break
+            if frame_step in selected_steps:
+                continue
+            frame_atoms.info["al_step"] = frame_step
+            frame_atoms.info["al_selection_mode"] = "recovery_stride_sampling"
+            frame_atoms.info["al_recovery_stride_steps"] = recovery_stride_steps
+            frame_atoms.info["al_termination_reason"] = termination_reason
+            write(str(output_path), frame_atoms, format="extxyz", append=True)
+            selected_steps.add(frame_step)
+            selected_count += 1
+            recovery_selected_count += 1
+            needed -= 1
 
     if threshold is None:
         threshold = float(np.mean(warmup_uncertainties)) if warmup_uncertainties else 0.0
@@ -218,7 +246,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
         note = (
             f"AL MD terminated early. Selected {selected_count}/{target_conformers} conformers. "
             f"Threshold={threshold:.6f}. Warning: {termination_reason} "
-            f"Last frame saved at {last_frame_path}."
+            f"Recovery-selected={recovery_selected_count}. Last frame saved at {last_frame_path}."
         )
     else:
         note = (
@@ -231,6 +259,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
         "al_last_frame_path": saved_last_frame_path,
         "al_threshold": threshold,
         "al_selected_count": selected_count,
+        "al_recovery_selected_count": recovery_selected_count,
         "al_uncertainties": uncertainties,
         "al_terminated_early": terminated_early,
         "al_termination_reason": termination_reason,

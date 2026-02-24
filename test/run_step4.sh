@@ -18,6 +18,7 @@ python "$SCRIPT_DIR/run_step4.py" \
   --structure-check-interval 20 \
   --min-interatomic-distance 0.6 \
   --max-distance-scale 2.5 \
+  --recovery-stride-steps 10 \
   --threshold-warmup-steps 500 \
   --target-conformers 50 \
   --rng-seed 123 \

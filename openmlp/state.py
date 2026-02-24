@@ -52,12 +52,15 @@ class PipelineState(TypedDict, total=False):
     al_structure_check_interval: int
     al_min_interatomic_distance: float
     al_max_distance_scale: float
+    al_recovery_stride_steps: int
+    al_recovery_enabled: bool
     al_threshold_warmup_steps: int
     al_target_conformers: int
     al_rng_seed: int
     al_device: str
     al_threshold: float
     al_selected_count: int
+    al_recovery_selected_count: int
     al_uncertainties: List[float]
     al_terminated_early: bool
     al_termination_reason: str
