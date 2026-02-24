@@ -138,6 +138,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     warmup_uncertainties: List[float] = []
     selected_count = 0
     recovery_selected_count = 0
+    skipped_unstable_count = 0
     threshold: Optional[float] = None
     terminated_early = False
     termination_reason = ""
@@ -162,7 +163,14 @@ def active_learning_node(state: PipelineState) -> PipelineState:
                 break
 
         if step % recovery_stride_steps == 0:
-            stable_frames.append((step, atoms.copy()))
+            recovery_health_reason = _check_structure_health(
+                atoms=atoms,
+                initial_max_distance=initial_max_distance,
+                min_interatomic_distance=min_interatomic_distance,
+                max_distance_scale=max_distance_scale,
+            )
+            if recovery_health_reason is None:
+                stable_frames.append((step, atoms.copy()))
 
         if step % eval_interval != 0:
             continue
@@ -196,6 +204,20 @@ def active_learning_node(state: PipelineState) -> PipelineState:
 
         if uncertainty >= threshold:
             chosen = atoms.copy()
+            selected_health_reason = _check_structure_health(
+                atoms=chosen,
+                initial_max_distance=initial_max_distance,
+                min_interatomic_distance=min_interatomic_distance,
+                max_distance_scale=max_distance_scale,
+            )
+            if selected_health_reason is not None:
+                skipped_unstable_count += 1
+                progress.set_postfix(
+                    selected=selected_count,
+                    skipped_unstable=skipped_unstable_count,
+                    threshold=f"{threshold:.5f}",
+                )
+                continue
             chosen.info["al_step"] = step
             chosen.info["al_uncertainty"] = uncertainty
             chosen.info["al_threshold"] = threshold
@@ -246,12 +268,15 @@ def active_learning_node(state: PipelineState) -> PipelineState:
         note = (
             f"AL MD terminated early. Selected {selected_count}/{target_conformers} conformers. "
             f"Threshold={threshold:.6f}. Warning: {termination_reason} "
-            f"Recovery-selected={recovery_selected_count}. Last frame saved at {last_frame_path}."
+            f"Recovery-selected={recovery_selected_count}. "
+            f"Skipped-unstable={skipped_unstable_count}. "
+            f"Last frame saved at {last_frame_path}."
         )
     else:
         note = (
             f"AL MD finished. Selected {selected_count}/{target_conformers} conformers. "
-            f"Threshold={threshold:.6f}, output={output_path}."
+            f"Threshold={threshold:.6f}, output={output_path}. "
+            f"Skipped-unstable={skipped_unstable_count}."
         )
 
     return {
