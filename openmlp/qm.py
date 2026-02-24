@@ -69,6 +69,23 @@ def qm_calculation_node(state: PipelineState) -> PipelineState:
     qm_output_extxyz = workdir / f"{calc_type}_{input_name}"
     qm_output_csv = workdir / f"{calc_type}_{input_name.replace('.extxyz', '.csv')}"
 
+    if not qm_output_extxyz.exists():
+        # Fallback: find candidate extxyz files produced in qm_workdir.
+        candidates = sorted(
+            workdir.glob(f"{calc_type}_*.extxyz"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            qm_output_extxyz = candidates[0]
+            qm_output_csv = qm_output_extxyz.with_suffix(".csv")
+        else:
+            raise FileNotFoundError(
+                "QM run finished but no QM-labeled extxyz was produced. "
+                f"Expected: {workdir / f'{calc_type}_{input_name}'}; "
+                f"workdir={workdir}. This usually means all QM frames failed/convergence issues."
+            )
+
     return {
         "qm_output_extxyz": str(qm_output_extxyz),
         "qm_output_csv": str(qm_output_csv),
