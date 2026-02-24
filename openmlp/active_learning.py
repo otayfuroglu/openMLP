@@ -41,6 +41,40 @@ def _resolve_model_paths(state: PipelineState) -> tuple[Path, Path]:
     return model1_path, model2_path
 
 
+def _pair_distance_stats(atoms: Atoms) -> tuple[float, float]:
+    distances = atoms.get_all_distances(mic=True)
+    non_zero = distances[distances > 0.0]
+    if non_zero.size == 0:
+        return 0.0, 0.0
+    return float(np.min(non_zero)), float(np.max(non_zero))
+
+
+def _check_structure_health(
+    atoms: Atoms,
+    initial_max_distance: float,
+    min_interatomic_distance: float,
+    max_distance_scale: float,
+) -> Optional[str]:
+    positions = atoms.get_positions()
+    if not np.all(np.isfinite(positions)):
+        return "Detected non-finite atomic positions (NaN/Inf)."
+
+    min_dist, max_dist = _pair_distance_stats(atoms)
+    if min_dist > 0.0 and min_dist < min_interatomic_distance:
+        return (
+            f"Structure collapse detected: minimum interatomic distance {min_dist:.4f} A "
+            f"< threshold {min_interatomic_distance:.4f} A."
+        )
+
+    max_allowed = initial_max_distance * max_distance_scale
+    if max_dist > max_allowed:
+        return (
+            f"Structure explosion detected: maximum interatomic distance {max_dist:.4f} A "
+            f"> threshold {max_allowed:.4f} A."
+        )
+    return None
+
+
 def active_learning_node(state: PipelineState) -> PipelineState:
     input_structure = state.get("al_input_structure") or state.get("input_structure")
     if not input_structure:
@@ -60,6 +94,9 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     temperature_k = float(state.get("al_temperature_k", 300.0))
     friction = float(state.get("al_friction", 0.02))
     eval_interval = int(state.get("al_energy_eval_interval", 20))
+    check_interval = int(state.get("al_structure_check_interval", 20))
+    min_interatomic_distance = float(state.get("al_min_interatomic_distance", 0.6))
+    max_distance_scale = float(state.get("al_max_distance_scale", 2.5))
     warmup_steps = int(state.get("al_threshold_warmup_steps", 500))
     target_conformers = int(state.get("al_target_conformers", 50))
     rng_seed = int(state.get("al_rng_seed", 123))
@@ -69,6 +106,8 @@ def active_learning_node(state: PipelineState) -> PipelineState:
         raise ValueError("al_md_steps must be >= 1.")
     if eval_interval < 1:
         raise ValueError("al_energy_eval_interval must be >= 1.")
+    if check_interval < 1:
+        raise ValueError("al_structure_check_interval must be >= 1.")
     if warmup_steps < 1:
         raise ValueError("al_threshold_warmup_steps must be >= 1.")
     if target_conformers < 1:
@@ -76,6 +115,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
 
     atoms: Atoms = read(str(input_path))
     np.random.seed(rng_seed)
+    _, initial_max_distance = _pair_distance_stats(atoms)
 
     calc1 = _load_nequip_calculator(model1_path, device=device)
     calc2 = _load_nequip_calculator(model2_path, device=device)
@@ -91,17 +131,43 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     warmup_uncertainties: List[float] = []
     selected_count = 0
     threshold: Optional[float] = None
+    terminated_early = False
+    termination_reason = ""
 
     progress = tqdm(range(1, md_steps + 1), desc="AL NVT MD", unit="step")
     for step in progress:
         dyn.run(1)
+
+        if step % check_interval == 0:
+            health_reason = _check_structure_health(
+                atoms=atoms,
+                initial_max_distance=initial_max_distance,
+                min_interatomic_distance=min_interatomic_distance,
+                max_distance_scale=max_distance_scale,
+            )
+            if health_reason:
+                terminated_early = True
+                termination_reason = f"Terminated at step {step}. {health_reason}"
+                progress.set_postfix(status="terminated", reason="structure_unstable")
+                break
+
         if step % eval_interval != 0:
             continue
 
         energy1 = float(atoms.get_potential_energy())
+        if not np.isfinite(energy1):
+            terminated_early = True
+            termination_reason = f"Terminated at step {step}. Model 1 energy is non-finite."
+            progress.set_postfix(status="terminated", reason="nonfinite_energy")
+            break
         atoms2 = atoms.copy()
         atoms2.calc = calc2
         energy2 = float(atoms2.get_potential_energy())
+        if not np.isfinite(energy2):
+            terminated_early = True
+            termination_reason = f"Terminated at step {step}. Model 2 energy is non-finite."
+            progress.set_postfix(status="terminated", reason="nonfinite_energy")
+            break
         uncertainty = abs(energy1 - energy2)
         uncertainties.append(uncertainty)
 
@@ -135,13 +201,23 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     if threshold is None:
         threshold = float(np.mean(warmup_uncertainties)) if warmup_uncertainties else 0.0
 
+    if terminated_early:
+        note = (
+            f"AL MD terminated early. Selected {selected_count}/{target_conformers} conformers. "
+            f"Threshold={threshold:.6f}. Warning: {termination_reason}"
+        )
+    else:
+        note = (
+            f"AL MD finished. Selected {selected_count}/{target_conformers} conformers. "
+            f"Threshold={threshold:.6f}, output={output_path}"
+        )
+
     return {
         "al_output_extxyz": str(output_path),
         "al_threshold": threshold,
         "al_selected_count": selected_count,
         "al_uncertainties": uncertainties,
-        "notes": (
-            f"AL MD finished. Selected {selected_count}/{target_conformers} conformers. "
-            f"Threshold={threshold:.6f}, output={output_path}"
-        ),
+        "al_terminated_early": terminated_early,
+        "al_termination_reason": termination_reason,
+        "notes": note,
     }

@@ -38,6 +38,9 @@ def parse_args():
     parser.add_argument("--temperature-k", type=float, default=300.0)
     parser.add_argument("--friction", type=float, default=0.02)
     parser.add_argument("--energy-eval-interval", type=int, default=20)
+    parser.add_argument("--structure-check-interval", type=int, default=20)
+    parser.add_argument("--min-interatomic-distance", type=float, default=0.6)
+    parser.add_argument("--max-distance-scale", type=float, default=2.5)
     parser.add_argument("--threshold-warmup-steps", type=int, default=500)
     parser.add_argument("--target-conformers", type=int, default=50)
     parser.add_argument("--rng-seed", type=int, default=123)
@@ -59,6 +62,9 @@ def main():
             "al_temperature_k": args.temperature_k,
             "al_friction": args.friction,
             "al_energy_eval_interval": args.energy_eval_interval,
+            "al_structure_check_interval": args.structure_check_interval,
+            "al_min_interatomic_distance": args.min_interatomic_distance,
+            "al_max_distance_scale": args.max_distance_scale,
             "al_threshold_warmup_steps": args.threshold_warmup_steps,
             "al_target_conformers": args.target_conformers,
             "al_rng_seed": args.rng_seed,
@@ -68,6 +74,8 @@ def main():
     print(result["notes"])
     print("Selected:", result.get("al_selected_count", 0))
     print("Threshold:", result.get("al_threshold", 0.0))
+    print("Terminated early:", result.get("al_terminated_early", False))
+    print("Termination reason:", result.get("al_termination_reason", ""))
     print("Output:", result.get("al_output_extxyz", "N/A"))
 
 

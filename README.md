@@ -121,6 +121,9 @@ Selection policy:
 - set threshold = average warmup uncertainty
 - after warmup, select frames where uncertainty >= threshold
 - stop MD early when selected conformers reaches user target
+- every structure-check interval, terminate early if:
+  collapse (`min distance < min-interatomic-distance`) or
+  explosion (`max distance > initial_max_distance * max-distance-scale`)
 
 Run:
 

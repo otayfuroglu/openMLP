@@ -15,6 +15,9 @@ python "$SCRIPT_DIR/run_step4.py" \
   --temperature-k 300.0 \
   --friction 0.02 \
   --energy-eval-interval 20 \
+  --structure-check-interval 20 \
+  --min-interatomic-distance 0.6 \
+  --max-distance-scale 2.5 \
   --threshold-warmup-steps 500 \
   --target-conformers 50 \
   --rng-seed 123 \
