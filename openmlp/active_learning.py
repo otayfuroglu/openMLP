@@ -7,6 +7,7 @@ from ase.io import read, write
 from ase.md.langevin import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution, Stationary, ZeroRotation
 from ase.units import fs
+from tqdm import tqdm
 
 from openmlp.state import PipelineState
 
@@ -91,7 +92,8 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     selected_count = 0
     threshold: Optional[float] = None
 
-    for step in range(1, md_steps + 1):
+    progress = tqdm(range(1, md_steps + 1), desc="AL NVT MD", unit="step")
+    for step in progress:
         dyn.run(1)
         if step % eval_interval != 0:
             continue
@@ -122,6 +124,11 @@ def active_learning_node(state: PipelineState) -> PipelineState:
             chosen.info["al_energy_model2"] = energy2
             write(str(output_path), chosen, format="extxyz", append=True)
             selected_count += 1
+            progress.set_postfix(
+                selected=selected_count,
+                threshold=f"{threshold:.5f}",
+                uncertainty=f"{uncertainty:.5f}",
+            )
             if selected_count >= target_conformers:
                 break
 
