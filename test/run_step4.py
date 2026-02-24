@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument("--threshold-warmup-steps", type=int, default=500)
     parser.add_argument("--target-conformers", type=int, default=50)
     parser.add_argument("--rng-seed", type=int, default=123)
-    parser.add_argument("--device", default="cpu", help="NequIP device for inference.")
+    parser.add_argument("--device", default="cuda", help="NequIP device for inference.")
     return parser.parse_args()
 
 

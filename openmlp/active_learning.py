@@ -63,7 +63,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     warmup_steps = int(state.get("al_threshold_warmup_steps", 500))
     target_conformers = int(state.get("al_target_conformers", 50))
     rng_seed = int(state.get("al_rng_seed", 123))
-    device = state.get("al_device", "cpu")
+    device = state.get("al_device", "cuda")
 
     if md_steps < 1:
         raise ValueError("al_md_steps must be >= 1.")

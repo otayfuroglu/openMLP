@@ -18,4 +18,4 @@ python "$SCRIPT_DIR/run_step4.py" \
   --threshold-warmup-steps 500 \
   --target-conformers 50 \
   --rng-seed 123 \
-  --device cpu
+  --device cuda
