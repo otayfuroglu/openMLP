@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 import subprocess
 
 from openmlp.state import PipelineState
@@ -29,11 +30,15 @@ def qm_calculation_node(state: PipelineState) -> PipelineState:
     if not runner_script.exists():
         raise FileNotFoundError(f"QM runner script not found: {runner_script}")
 
+    staged_input_path = workdir / qm_input_path.name
+    if qm_input_path.resolve() != staged_input_path.resolve():
+        shutil.copy2(str(qm_input_path), str(staged_input_path))
+
     command = [
         "python",
         str(runner_script),
         "-in_extxyz",
-        str(qm_input_path),
+        str(staged_input_path),
         "-orca_path",
         str(orca_path),
         "-calc_type",
@@ -60,7 +65,7 @@ def qm_calculation_node(state: PipelineState) -> PipelineState:
             f"stderr:\n{completed.stderr}"
         )
 
-    input_name = qm_input_path.name
+    input_name = staged_input_path.name
     qm_output_extxyz = workdir / f"{calc_type}_{input_name}"
     qm_output_csv = workdir / f"{calc_type}_{input_name.replace('.extxyz', '.csv')}"
 
