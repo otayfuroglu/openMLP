@@ -85,7 +85,10 @@ def active_learning_node(state: PipelineState) -> PipelineState:
 
     model1_path, model2_path = _resolve_model_paths(state)
     output_path = Path(state.get("al_output_extxyz", "outputs/al_selected_non_eq_geoms.extxyz")).resolve()
+    last_frame_default = output_path.with_name(f"{output_path.stem}_last_frame.extxyz")
+    last_frame_path = Path(state.get("al_last_frame_path", str(last_frame_default))).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    last_frame_path.parent.mkdir(parents=True, exist_ok=True)
     if output_path.exists():
         output_path.unlink()
 
@@ -201,19 +204,31 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     if threshold is None:
         threshold = float(np.mean(warmup_uncertainties)) if warmup_uncertainties else 0.0
 
+    saved_last_frame_path = ""
+    if terminated_early:
+        final_atoms = atoms.copy()
+        final_atoms.info["al_terminated_early"] = terminated_early
+        final_atoms.info["al_termination_reason"] = termination_reason
+        final_atoms.info["al_selected_count"] = selected_count
+        final_atoms.info["al_threshold"] = threshold
+        write(str(last_frame_path), final_atoms, format="extxyz")
+        saved_last_frame_path = str(last_frame_path)
+
     if terminated_early:
         note = (
             f"AL MD terminated early. Selected {selected_count}/{target_conformers} conformers. "
-            f"Threshold={threshold:.6f}. Warning: {termination_reason}"
+            f"Threshold={threshold:.6f}. Warning: {termination_reason} "
+            f"Last frame saved at {last_frame_path}."
         )
     else:
         note = (
             f"AL MD finished. Selected {selected_count}/{target_conformers} conformers. "
-            f"Threshold={threshold:.6f}, output={output_path}"
+            f"Threshold={threshold:.6f}, output={output_path}."
         )
 
     return {
         "al_output_extxyz": str(output_path),
+        "al_last_frame_path": saved_last_frame_path,
         "al_threshold": threshold,
         "al_selected_count": selected_count,
         "al_uncertainties": uncertainties,

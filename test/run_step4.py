@@ -33,6 +33,11 @@ def parse_args():
         default=str(Path(__file__).resolve().parent / "al_selected_non_eq_geoms.extxyz"),
         help="Output extxyz path for selected conformers.",
     )
+    parser.add_argument(
+        "--last-frame-path",
+        default="",
+        help="Optional output path for saving the last MD frame.",
+    )
     parser.add_argument("--md-steps", type=int, default=5000)
     parser.add_argument("--timestep-fs", type=float, default=1.0)
     parser.add_argument("--temperature-k", type=float, default=300.0)
@@ -51,8 +56,7 @@ def parse_args():
 def main():
     args = parse_args()
     app = build_step4_graph()
-    result = app.invoke(
-        {
+    payload = {
             "al_input_structure": args.input_structure,
             "al_model1_path": args.model1_path,
             "al_model2_path": args.model2_path,
@@ -69,14 +73,17 @@ def main():
             "al_target_conformers": args.target_conformers,
             "al_rng_seed": args.rng_seed,
             "al_device": args.device,
-        }
-    )
+    }
+    if args.last_frame_path:
+        payload["al_last_frame_path"] = args.last_frame_path
+    result = app.invoke(payload)
     print(result["notes"])
     print("Selected:", result.get("al_selected_count", 0))
     print("Threshold:", result.get("al_threshold", 0.0))
     print("Terminated early:", result.get("al_terminated_early", False))
     print("Termination reason:", result.get("al_termination_reason", ""))
     print("Output:", result.get("al_output_extxyz", "N/A"))
+    print("Last frame:", result.get("al_last_frame_path", "N/A"))
 
 
 if __name__ == "__main__":

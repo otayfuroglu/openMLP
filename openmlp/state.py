@@ -43,6 +43,7 @@ class PipelineState(TypedDict, total=False):
     al_model1_path: str
     al_model2_path: str
     al_output_extxyz: str
+    al_last_frame_path: str
     al_md_steps: int
     al_timestep_fs: float
     al_temperature_k: float
