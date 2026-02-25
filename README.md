@@ -60,7 +60,7 @@ python test/run_step2.py \
   --input test/MgF2.xyz \
   --non-eq-output test/non_eq_geometries.extxyz \
   --n-structures 30 \
-  --qm-calc-type sp \
+  --qm-calc-type engrad \
   --qm-calculator-type orca \
   --qm-n-core 24 \
   --qm-orca-path /path/to/orca \

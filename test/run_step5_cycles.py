@@ -65,7 +65,7 @@ def parse_args():
     )
 
     parser.add_argument("--qm-orca-path", required=True)
-    parser.add_argument("--qm-calc-type", default="sp")
+    parser.add_argument("--qm-calc-type", default="engrad")
     parser.add_argument("--qm-calculator-type", default="orca")
     parser.add_argument("--qm-n-core", type=int, default=24)
 

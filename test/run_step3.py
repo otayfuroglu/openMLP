@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument("--max-atom-displacement", type=float, default=0.16)
     parser.add_argument("--displacement-attempts", type=int, default=200)
 
-    parser.add_argument("--qm-calc-type", default="sp", help="QM calc type prefix.")
+    parser.add_argument("--qm-calc-type", default="engrad", help="QM calc type prefix.")
     parser.add_argument("--qm-calculator-type", default="orca", help="orca or g16.")
     parser.add_argument("--qm-n-core", type=int, default=24, help="Total cores for QM step.")
     parser.add_argument(

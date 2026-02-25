@@ -14,7 +14,7 @@ def qm_calculation_node(state: PipelineState) -> PipelineState:
     if not qm_input_path.exists():
         raise FileNotFoundError(f"QM input extxyz not found: {qm_input_path}")
 
-    calc_type = state.get("qm_calc_type", "sp")
+    calc_type = state.get("qm_calc_type", "engrad")
     calculator_type = state.get("qm_calculator_type", "orca")
     n_core = int(state.get("qm_n_core", 24))
     orca_path = state.get("qm_orca_path")

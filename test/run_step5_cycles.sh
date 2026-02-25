@@ -13,7 +13,7 @@ python "$SCRIPT_DIR/run_step5_cycles.py" \
   --cycles 5 \
   --workdir "$SCRIPT_DIR/cycle_runs" \
   --qm-orca-path "$ORCA_PATH" \
-  --qm-calc-type sp \
+  --qm-calc-type engrad \
   --qm-calculator-type orca \
   --qm-n-core 24 \
   --train-config-template "$SCRIPT_DIR/../openmlp/train/full.yaml" \

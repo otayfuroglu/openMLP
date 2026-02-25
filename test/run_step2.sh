@@ -12,7 +12,7 @@ python "$SCRIPT_DIR/run_step2.py" \
   --scale-max 1.09 \
   --max-atom-displacement 0.16 \
   --displacement-attempts 200 \
-  --qm-calc-type sp \
+  --qm-calc-type engrad \
   --qm-calculator-type orca \
   --qm-n-core 24 \
   --qm-orca-path "$ORCA_PATH" \
