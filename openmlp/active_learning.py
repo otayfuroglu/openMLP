@@ -139,6 +139,7 @@ def active_learning_node(state: PipelineState) -> PipelineState:
     selected_count = 0
     recovery_selected_count = 0
     skipped_unstable_count = 0
+    label_counter = 0
     threshold: Optional[float] = None
     terminated_early = False
     termination_reason = ""
@@ -223,6 +224,8 @@ def active_learning_node(state: PipelineState) -> PipelineState:
             chosen.info["al_threshold"] = threshold
             chosen.info["al_energy_model1"] = energy1
             chosen.info["al_energy_model2"] = energy2
+            chosen.info["label"] = f"{output_path.stem}_al_{step:06d}_{label_counter:06d}"
+            label_counter += 1
             write(str(output_path), chosen, format="extxyz", append=True)
             selected_count += 1
             selected_steps.add(step)
@@ -245,6 +248,8 @@ def active_learning_node(state: PipelineState) -> PipelineState:
             frame_atoms.info["al_selection_mode"] = "recovery_stride_sampling"
             frame_atoms.info["al_recovery_stride_steps"] = recovery_stride_steps
             frame_atoms.info["al_termination_reason"] = termination_reason
+            frame_atoms.info["label"] = f"{output_path.stem}_recovery_{frame_step:06d}_{label_counter:06d}"
+            label_counter += 1
             write(str(output_path), frame_atoms, format="extxyz", append=True)
             selected_steps.add(frame_step)
             selected_count += 1
