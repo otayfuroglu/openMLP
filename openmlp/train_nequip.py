@@ -107,6 +107,29 @@ def _resolve_model_seeds(state: PipelineState, base_seed: int) -> List[int]:
     return [base_seed + index for index in range(num_models)]
 
 
+def _resolve_cuda_devices(state: PipelineState, n_models: int) -> List[Optional[str]]:
+    raw_devices = state.get("train_cuda_devices")
+    devices: List[str] = []
+    if isinstance(raw_devices, list):
+        devices = [str(item).strip() for item in raw_devices if str(item).strip()]
+    elif isinstance(raw_devices, str):
+        devices = [part.strip() for part in raw_devices.split(",") if part.strip()]
+
+    if not devices:
+        env_visible = None
+        try:
+            import os
+            env_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        except Exception:
+            env_visible = ""
+        if env_visible:
+            devices = [part.strip() for part in env_visible.split(",") if part.strip()]
+
+    if not devices:
+        return [None for _ in range(n_models)]
+    return [devices[index % len(devices)] for index in range(n_models)]
+
+
 def _resolve_command_parts(command: str, bin_dir: Optional[str], executable_name: str) -> List[str]:
     parts = shlex.split(command)
     if not parts:
@@ -179,6 +202,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
     model_config_paths: List[str] = []
     model_log_paths: List[str] = []
     model_cmd_parts: List[List[str]] = []
+    model_cuda_devices = _resolve_cuda_devices(state, len(model_seeds))
     model_root_dirs: List[str] = []
     model_run_names: List[str] = []
     model_run_dirs: List[str] = []
@@ -209,11 +233,18 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
         model_log_paths.append(str(model_log_path))
     if run_training:
         processes: List[subprocess.Popen] = []
-        for cmd_parts in model_cmd_parts:
+        for cmd_parts, model_cuda_device in zip(model_cmd_parts, model_cuda_devices):
+            child_env = None
+            if model_cuda_device is not None:
+                import os
+
+                child_env = os.environ.copy()
+                child_env["CUDA_VISIBLE_DEVICES"] = model_cuda_device
             processes.append(
                 subprocess.Popen(
                     cmd_parts,
                     cwd=str(workdir),
+                    env=child_env,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -299,7 +330,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
 
     note = (
         f"Prepared {len(model_seeds)} NequIP configs with dataset={dataset_path.name}, "
-        f"n_train={n_train}, n_val={n_val}, seeds={model_seeds}."
+        f"n_train={n_train}, n_val={n_val}, seeds={model_seeds}, cuda_devices={model_cuda_devices}."
     )
     if run_training:
         note += " Ensemble training completed in parallel."

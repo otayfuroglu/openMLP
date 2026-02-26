@@ -87,6 +87,11 @@ def parse_args():
     parser.add_argument("--train-val-ratio", type=float, default=0.1)
     parser.add_argument("--train-num-models", type=int, default=2)
     parser.add_argument("--train-model-seeds", default="")
+    parser.add_argument(
+        "--train-cuda-devices",
+        default="",
+        help="Comma-separated CUDA devices for model-parallel training, e.g. 0,1",
+    )
     parser.add_argument("--nequip-command", default="nequip-train")
     parser.add_argument("--nequip-deploy-command", default="nequip-deploy")
     parser.add_argument("--nequip-bin-dir", default="")
@@ -254,9 +259,10 @@ def main():
                     "train_config_path": str(train_workdir / "full.auto.yaml"),
                     "train_workdir": str(train_workdir),
                     "train_val_ratio": args.train_val_ratio,
-                    "train_num_models": args.train_num_models,
-                    "train_model_seeds": model_seeds if model_seeds else None,
-                    "nequip_bin_dir": args.nequip_bin_dir,
+                "train_num_models": args.train_num_models,
+                "train_model_seeds": model_seeds if model_seeds else None,
+                "train_cuda_devices": args.train_cuda_devices,
+                "nequip_bin_dir": args.nequip_bin_dir,
                     "nequip_command": args.nequip_command,
                     "nequip_deploy_command": args.nequip_deploy_command,
                     "train_run": True,

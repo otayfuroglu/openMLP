@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${ORCA_PATH:?Set ORCA_PATH to your ORCA executable path}"
 : "${BOOTSTRAP_STRUCTURE:=$SCRIPT_DIR/MgF2.xyz}"
 : "${NEQUIP_BIN_DIR:=}"
+: "${TRAIN_CUDA_DEVICES:=}"
 
 python "$SCRIPT_DIR/run_step5_cycles.py" \
   --bootstrap-input-structure "$BOOTSTRAP_STRUCTURE" \
@@ -19,6 +20,7 @@ python "$SCRIPT_DIR/run_step5_cycles.py" \
   --train-config-template "$SCRIPT_DIR/../openmlp/train/full.yaml" \
   --train-val-ratio 0.1 \
   --train-num-models 2 \
+  --train-cuda-devices "$TRAIN_CUDA_DEVICES" \
   --nequip-command "nequip-train" \
   --nequip-deploy-command "nequip-deploy" \
   --nequip-bin-dir "$NEQUIP_BIN_DIR" \

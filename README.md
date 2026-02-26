@@ -84,6 +84,12 @@ export ORCA_PATH=/path/to/orca
 bash test/run_step3.sh
 ```
 
+Optional GPU split for parallel models:
+
+```bash
+export TRAIN_CUDA_DEVICES=0,1
+```
+
 This writes seed-specific auto configs such as `test/full.auto.seed123.yaml`.
 
 Ensemble behavior:
@@ -170,6 +176,7 @@ Run 5 cycles:
 export ORCA_PATH=/path/to/orca
 export BOOTSTRAP_STRUCTURE=/path/to/MgF2.xyz
 export NEQUIP_BIN_DIR=/path/to/nequip/bin
+export TRAIN_CUDA_DEVICES=0,1
 bash test/run_step5_cycles.sh
 ```
 

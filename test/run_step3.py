@@ -90,6 +90,11 @@ def parse_args():
         help="Comma-separated explicit model seeds, e.g. 123,456",
     )
     parser.add_argument(
+        "--train-cuda-devices",
+        default="",
+        help="Comma-separated CUDA devices for parallel models, e.g. 0,1",
+    )
+    parser.add_argument(
         "--nequip-command",
         default="nequip-train",
         help="NequIP CLI command.",
@@ -138,6 +143,7 @@ def main():
         "train_n_val": args.train_n_val,
         "train_num_models": args.train_num_models,
         "train_model_seeds": args.train_model_seeds,
+        "train_cuda_devices": args.train_cuda_devices,
         "nequip_bin_dir": args.nequip_bin_dir,
         "nequip_command": args.nequip_command,
         "nequip_deploy_command": args.nequip_deploy_command,

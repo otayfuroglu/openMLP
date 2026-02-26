@@ -28,6 +28,7 @@ class PipelineState(TypedDict, total=False):
     train_val_ratio: float
     train_num_models: int
     train_model_seeds: List[int]
+    train_cuda_devices: List[str]
     train_root: str
     train_run: bool
     deploy_run: bool

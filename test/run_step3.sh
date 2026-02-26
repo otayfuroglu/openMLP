@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${ORCA_PATH:?Set ORCA_PATH to your ORCA executable path}"
 : "${NEQUIP_BIN_DIR:=}"
+: "${TRAIN_CUDA_DEVICES:=}"
 
 python "$SCRIPT_DIR/run_step3.py" \
   --input "$SCRIPT_DIR/MgF2.xyz" \
@@ -23,6 +24,7 @@ python "$SCRIPT_DIR/run_step3.py" \
   --train-workdir "$SCRIPT_DIR" \
   --train-val-ratio 0.1 \
   --train-num-models 2 \
+  --train-cuda-devices "$TRAIN_CUDA_DEVICES" \
   --nequip-command "nequip-train" \
   --nequip-deploy-command "nequip-deploy" \
   --nequip-bin-dir "$NEQUIP_BIN_DIR"
