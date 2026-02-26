@@ -94,6 +94,24 @@ def parse_args():
     parser.add_argument("--al-md-steps", type=int, default=5000)
     parser.add_argument("--al-timestep-fs", type=float, default=1.0)
     parser.add_argument("--al-temperature-k", type=float, default=300.0)
+    parser.add_argument(
+        "--al-cycle-temp-start-k",
+        type=float,
+        default=300.0,
+        help="Cycle 1 AL temperature (K).",
+    )
+    parser.add_argument(
+        "--al-cycle-temp-step-k",
+        type=float,
+        default=0.0,
+        help="Temperature increment per cycle (K).",
+    )
+    parser.add_argument(
+        "--al-cycle-temp-max-k",
+        type=float,
+        default=300.0,
+        help="Maximum AL temperature cap (K).",
+    )
     parser.add_argument("--al-friction", type=float, default=0.02)
     parser.add_argument("--al-energy-eval-interval", type=int, default=20)
     parser.add_argument("--al-structure-check-interval", type=int, default=20)
@@ -216,9 +234,15 @@ def main():
         cycle_state = _load_json(cycle_state_path)
         print(f"\n=== Cycle {cycle_idx}/{args.cycles} ===")
         print(f"Dataset: {current_dataset}")
+        cycle_temperature_k = min(
+            args.al_cycle_temp_start_k + (cycle_idx - 1) * args.al_cycle_temp_step_k,
+            args.al_cycle_temp_max_k,
+        )
+        print(f"Cycle AL temperature: {cycle_temperature_k:.1f} K")
         cycle_state.setdefault("cycle", cycle_idx)
         cycle_state.setdefault("train_dataset_in", str(current_dataset))
         cycle_state.setdefault("stage", "start")
+        cycle_state["al_temperature_k"] = cycle_temperature_k
 
         # Stage 1: train/deploy
         if cycle_state["stage"] in {"start"}:
@@ -264,7 +288,7 @@ def main():
                     "al_output_extxyz": str(al_selected_path),
                     "al_md_steps": args.al_md_steps,
                     "al_timestep_fs": args.al_timestep_fs,
-                    "al_temperature_k": args.al_temperature_k,
+                    "al_temperature_k": cycle_temperature_k,
                     "al_friction": args.al_friction,
                     "al_energy_eval_interval": args.al_energy_eval_interval,
                     "al_structure_check_interval": args.al_structure_check_interval,
@@ -337,6 +361,7 @@ def main():
             "qm_output_extxyz": cycle_state["qm_output_extxyz"],
             "enriched_dataset_out": cycle_state["enriched_dataset_out"],
             "enriched_total_structures": int(cycle_state["enriched_total_structures"]),
+            "al_temperature_k": float(cycle_state.get("al_temperature_k", cycle_temperature_k)),
         }
         cycle_reports.append(cycle_report)
         print(

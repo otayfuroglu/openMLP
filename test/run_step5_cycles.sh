@@ -23,6 +23,9 @@ python "$SCRIPT_DIR/run_step5_cycles.py" \
   --nequip-deploy-command "nequip-deploy" \
   --nequip-bin-dir "$NEQUIP_BIN_DIR" \
   --al-md-steps 5000 \
+  --al-cycle-temp-start-k 100 \
+  --al-cycle-temp-step-k 50 \
+  --al-cycle-temp-max-k 500 \
   --al-energy-eval-interval 20 \
   --al-structure-check-interval 20 \
   --al-min-interatomic-distance 0.6 \

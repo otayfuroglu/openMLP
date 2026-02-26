@@ -48,6 +48,9 @@ class PipelineState(TypedDict, total=False):
     al_md_steps: int
     al_timestep_fs: float
     al_temperature_k: float
+    al_temp_start_k: float
+    al_temp_stop_k: float
+    al_temp_step_k: float
     al_friction: float
     al_energy_eval_interval: int
     al_structure_check_interval: int

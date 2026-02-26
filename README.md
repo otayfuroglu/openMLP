@@ -159,6 +159,11 @@ Step 5 repeats this loop:
 3. run QM on selected conformers
 4. merge new QM-labeled structures into enriched dataset
 
+AL temperature schedule per cycle is supported:
+
+- `T(cycle) = min(T_start + (cycle-1) * T_step, T_max)`
+- example: `T_start=100`, `T_step=50`, `T_max=500`
+
 Run 5 cycles:
 
 ```bash
@@ -179,6 +184,9 @@ python test/run_step5_cycles.py \
   --workdir test/cycle_runs \
   --qm-orca-path /path/to/orca \
   --nequip-bin-dir /path/to/nequip/bin \
+  --al-cycle-temp-start-k 100 \
+  --al-cycle-temp-step-k 50 \
+  --al-cycle-temp-max-k 500 \
   --al-target-conformers 50
 ```
 
