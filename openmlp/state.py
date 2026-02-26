@@ -39,6 +39,7 @@ class PipelineState(TypedDict, total=False):
     train_model_log_paths: List[str]
     train_model_run_dirs: List[str]
     deployed_model_paths: List[str]
+    train_timeout_seconds: int
     al_input_structure: str
     al_model1_path: str
     al_model2_path: str

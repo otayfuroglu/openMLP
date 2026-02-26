@@ -1,6 +1,7 @@
 from pathlib import Path
 import shlex
 import subprocess
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ase import Atoms
@@ -72,6 +73,7 @@ def _prepare_nequip_config(
     train_root: Optional[str],
     seed: int,
     run_name_suffix: str,
+    root_suffix: str,
 ) -> Dict[str, Any]:
     with template_path.open("r", encoding="utf-8") as handle:
         config = yaml.load(handle, Loader=_TupleSafeLoader)
@@ -82,7 +84,8 @@ def _prepare_nequip_config(
     config["n_train"] = int(n_train)
     config["n_val"] = int(n_val)
     config["seed"] = int(seed)
-    config["root"] = str(Path(train_root).resolve()) if train_root else str((workdir / "results").resolve())
+    base_root = Path(train_root).resolve() if train_root else (workdir / "results").resolve()
+    config["root"] = str((base_root / root_suffix).resolve())
     if "run_name" in config and isinstance(config["run_name"], str):
         config["run_name"] = f"{config['run_name']}_{run_name_suffix}"
     else:
@@ -160,6 +163,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
     model_seeds = _resolve_model_seeds(state, base_seed)
 
     run_training = bool(state.get("train_run", True))
+    train_timeout_seconds = int(state.get("train_timeout_seconds", 0))
     deploy_run = bool(state.get("deploy_run", run_training))
     nequip_bin_dir = state.get("nequip_bin_dir")
     train_command_parts_base = _resolve_command_parts(
@@ -194,6 +198,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
             train_root=state.get("train_root"),
             seed=seed,
             run_name_suffix=f"m{model_index}_{seed_suffix}",
+            root_suffix=f"model_{model_index}_{seed_suffix}",
         )
         model_config_paths.append(str(model_config_path))
         model_cmd_parts.append(train_command_parts_base + [str(model_config_path)])
@@ -216,14 +221,39 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
             )
 
         failures: List[Tuple[List[str], Path, int]] = []
-        for cmd_parts, model_log_path, process in zip(model_cmd_parts, model_log_paths, processes):
-            stdout_text, stderr_text = process.communicate()
-            Path(model_log_path).write_text(
-                (stdout_text or "") + "\n" + (stderr_text or ""),
-                encoding="utf-8",
-            )
-            if process.returncode != 0:
-                failures.append((cmd_parts, Path(model_log_path), int(process.returncode)))
+        start_time = time.time()
+        pending = set(range(len(processes)))
+        while pending:
+            for idx in list(pending):
+                process = processes[idx]
+                return_code = process.poll()
+                if return_code is None:
+                    continue
+                stdout_text, stderr_text = process.communicate()
+                model_log_path = Path(model_log_paths[idx])
+                model_log_path.write_text(
+                    (stdout_text or "") + "\n" + (stderr_text or ""),
+                    encoding="utf-8",
+                )
+                if return_code != 0:
+                    failures.append((model_cmd_parts[idx], model_log_path, int(return_code)))
+                pending.remove(idx)
+
+            if pending and train_timeout_seconds > 0:
+                elapsed = time.time() - start_time
+                if elapsed > train_timeout_seconds:
+                    for idx in list(pending):
+                        processes[idx].terminate()
+                    for idx in list(pending):
+                        try:
+                            processes[idx].wait(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            processes[idx].kill()
+                    raise RuntimeError(
+                        f"NequIP training timed out after {train_timeout_seconds} seconds."
+                    )
+            if pending:
+                time.sleep(1.0)
 
         if failures:
             cmd_parts, model_log_path, return_code = failures[0]
