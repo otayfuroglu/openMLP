@@ -58,11 +58,11 @@ def parse_args():
         default=str(Path(__file__).resolve().parent / "MgF2.xyz"),
         help="3D coordinate file used to bootstrap initial non-equilibrium geometries.",
     )
-    parser.add_argument("--bootstrap-n-structures", type=int, default=50)
+    parser.add_argument("--bootstrap-n-structures", type=int, default=200)
     parser.add_argument("--bootstrap-scale-min", type=float, default=0.97)
     parser.add_argument("--bootstrap-scale-max", type=float, default=1.09)
     parser.add_argument("--bootstrap-max-atom-displacement", type=float, default=0.16)
-    parser.add_argument("--bootstrap-displacement-attempts", type=int, default=200)
+    parser.add_argument("--bootstrap-displacement-attempts", type=int, default=10000)
     parser.add_argument(
         "--al-input-structure",
         default=str(Path(__file__).resolve().parent / "MgF2.xyz"),
