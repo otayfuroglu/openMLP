@@ -340,7 +340,7 @@ def main():
         }
         cycle_reports.append(cycle_report)
         print(
-            f"Cycle {cycle_idx} done: selected={selected_count}, "
+            f"Cycle {cycle_idx} done: selected={cycle_report['al_selected_count']}, "
             f"recovery={cycle_report['al_recovery_selected_count']}, "
             f"enriched_total={total_structures}"
         )
