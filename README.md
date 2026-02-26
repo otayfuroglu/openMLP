@@ -196,3 +196,11 @@ Outputs:
 - per-cycle folders under `workdir/cycle_XX`
 - enriched dataset after each cycle (`enriched_dataset_cycle_XX.extxyz`)
 - summary report (`workdir/cycle_report.json`)
+
+Resume behavior:
+
+- step-5 auto-resumes if `workdir/cycle_report.json` already exists
+- it continues from the next unfinished cycle using the last `final_dataset`
+- within each cycle it also resumes by stage via `cycle_XX/cycle_state.json`:
+  if interrupted after AL, restart continues from QM (no retraining)
+- to continue, rerun the same command with the same `--workdir`

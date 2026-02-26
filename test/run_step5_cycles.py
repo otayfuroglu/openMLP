@@ -2,7 +2,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from ase import Atoms
 from ase.io import read, write
@@ -31,6 +31,17 @@ def _merge_extxyz(input_paths: List[Path], output_path: Path) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     write(str(output_path), merged_atoms, format="extxyz")
     return len(merged_atoms)
+
+
+def _load_json(path: Path) -> Dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _save_json(path: Path, data: Dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def parse_args():
@@ -113,141 +124,219 @@ def main():
 
     workdir = Path(args.workdir).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
+    report_path = workdir / "cycle_report.json"
 
-    if args.initial_dataset_extxyz.strip():
-        initial_dataset = Path(args.initial_dataset_extxyz).resolve()
-        if not initial_dataset.exists():
-            raise FileNotFoundError(f"Initial dataset not found: {initial_dataset}")
-        current_dataset = initial_dataset
-        bootstrap_report = {
-            "source": "provided_initial_dataset",
-            "initial_dataset": str(initial_dataset),
-        }
-    else:
-        bootstrap_input = Path(args.bootstrap_input_structure).resolve()
-        if not bootstrap_input.exists():
-            raise FileNotFoundError(f"Bootstrap input structure not found: {bootstrap_input}")
-        bootstrap_dir = workdir / "bootstrap"
-        bootstrap_non_eq_path = bootstrap_dir / "non_eq_geometries.extxyz"
-        bootstrap_non_eq = non_equilibrium_node(
-            {
-                "input_structure": str(bootstrap_input),
-                "output_structures": str(bootstrap_non_eq_path),
-                "n_structures": args.bootstrap_n_structures,
-                "scale_min": args.bootstrap_scale_min,
-                "scale_max": args.bootstrap_scale_max,
-                "max_atom_displacement": args.bootstrap_max_atom_displacement,
-                "displacement_attempts": args.bootstrap_displacement_attempts,
-            }
-        )
-        bootstrap_qm = qm_calculation_node(
-            {
-                "qm_input_extxyz": str(bootstrap_non_eq_path),
-                "qm_orca_path": args.qm_orca_path,
-                "qm_calc_type": args.qm_calc_type,
-                "qm_calculator_type": args.qm_calculator_type,
-                "qm_n_core": args.qm_n_core,
-                "qm_workdir": str(bootstrap_dir / "qm"),
-            }
-        )
-        current_dataset = Path(bootstrap_qm["qm_output_extxyz"]).resolve()
-        bootstrap_report = {
-            "source": "bootstrap_from_structure",
-            "bootstrap_input_structure": str(bootstrap_input),
-            "bootstrap_non_eq_extxyz": str(bootstrap_non_eq_path),
-            "bootstrap_non_eq_count": int(bootstrap_non_eq.get("generated_count", 0)),
-            "bootstrap_qm_dataset": str(current_dataset),
-        }
-
-    print("Bootstrap:", bootstrap_report["source"])
-    print("Start dataset:", current_dataset)
+    # Resume automatically if an existing cycle report is found.
     cycle_reports = []
-    model_seeds = _parse_seed_list(args.train_model_seeds)
+    if report_path.exists():
+        existing_report = json.loads(report_path.read_text(encoding="utf-8"))
+        if isinstance(existing_report, list):
+            bootstrap_report = {"source": "resume_legacy_report"}
+            cycle_reports = existing_report
+            current_dataset_str = cycle_reports[-1]["enriched_dataset_out"] if cycle_reports else ""
+        else:
+            bootstrap_report = existing_report.get("bootstrap", {"source": "resume"})
+            cycle_reports = existing_report.get("cycles", [])
+            current_dataset_str = existing_report.get("final_dataset", "")
+            if not current_dataset_str and cycle_reports:
+                current_dataset_str = cycle_reports[-1].get("enriched_dataset_out", "")
 
-    for cycle_idx in range(1, args.cycles + 1):
+        if not current_dataset_str:
+            raise RuntimeError(
+                f"Found existing report but could not resolve dataset to resume from: {report_path}"
+            )
+        current_dataset = Path(current_dataset_str).resolve()
+        if not current_dataset.exists():
+            raise FileNotFoundError(f"Resume dataset from report does not exist: {current_dataset}")
+        print("Resume mode: enabled")
+        print("Resume dataset:", current_dataset)
+        print(f"Completed cycles in report: {len(cycle_reports)}")
+    else:
+        if args.initial_dataset_extxyz.strip():
+            initial_dataset = Path(args.initial_dataset_extxyz).resolve()
+            if not initial_dataset.exists():
+                raise FileNotFoundError(f"Initial dataset not found: {initial_dataset}")
+            current_dataset = initial_dataset
+            bootstrap_report = {
+                "source": "provided_initial_dataset",
+                "initial_dataset": str(initial_dataset),
+            }
+        else:
+            bootstrap_input = Path(args.bootstrap_input_structure).resolve()
+            if not bootstrap_input.exists():
+                raise FileNotFoundError(f"Bootstrap input structure not found: {bootstrap_input}")
+            bootstrap_dir = workdir / "bootstrap"
+            bootstrap_non_eq_path = bootstrap_dir / "non_eq_geometries.extxyz"
+            bootstrap_non_eq = non_equilibrium_node(
+                {
+                    "input_structure": str(bootstrap_input),
+                    "output_structures": str(bootstrap_non_eq_path),
+                    "n_structures": args.bootstrap_n_structures,
+                    "scale_min": args.bootstrap_scale_min,
+                    "scale_max": args.bootstrap_scale_max,
+                    "max_atom_displacement": args.bootstrap_max_atom_displacement,
+                    "displacement_attempts": args.bootstrap_displacement_attempts,
+                }
+            )
+            bootstrap_qm = qm_calculation_node(
+                {
+                    "qm_input_extxyz": str(bootstrap_non_eq_path),
+                    "qm_orca_path": args.qm_orca_path,
+                    "qm_calc_type": args.qm_calc_type,
+                    "qm_calculator_type": args.qm_calculator_type,
+                    "qm_n_core": args.qm_n_core,
+                    "qm_workdir": str(bootstrap_dir / "qm"),
+                }
+            )
+            current_dataset = Path(bootstrap_qm["qm_output_extxyz"]).resolve()
+            bootstrap_report = {
+                "source": "bootstrap_from_structure",
+                "bootstrap_input_structure": str(bootstrap_input),
+                "bootstrap_non_eq_extxyz": str(bootstrap_non_eq_path),
+                "bootstrap_non_eq_count": int(bootstrap_non_eq.get("generated_count", 0)),
+                "bootstrap_qm_dataset": str(current_dataset),
+            }
+        print("Bootstrap:", bootstrap_report["source"])
+        print("Start dataset:", current_dataset)
+
+    model_seeds = _parse_seed_list(args.train_model_seeds)
+    start_cycle = len(cycle_reports) + 1
+    if start_cycle > args.cycles:
+        print(
+            f"Nothing to run: report already has {len(cycle_reports)} cycles and requested cycles={args.cycles}."
+        )
+        print(f"Final dataset: {current_dataset}")
+        print(f"Report: {report_path}")
+        return
+
+    for cycle_idx in range(start_cycle, args.cycles + 1):
         cycle_dir = workdir / f"cycle_{cycle_idx:02d}"
         cycle_dir.mkdir(parents=True, exist_ok=True)
+        cycle_state_path = cycle_dir / "cycle_state.json"
+        cycle_state = _load_json(cycle_state_path)
         print(f"\n=== Cycle {cycle_idx}/{args.cycles} ===")
         print(f"Dataset: {current_dataset}")
+        cycle_state.setdefault("cycle", cycle_idx)
+        cycle_state.setdefault("train_dataset_in", str(current_dataset))
+        cycle_state.setdefault("stage", "start")
 
-        train_workdir = cycle_dir / "train"
-        train_result = train_nequip_node(
-            {
-                "train_dataset_extxyz": str(current_dataset),
-                "train_config_template": args.train_config_template,
-                "train_config_path": str(train_workdir / "full.auto.yaml"),
-                "train_workdir": str(train_workdir),
-                "train_val_ratio": args.train_val_ratio,
-                "train_num_models": args.train_num_models,
-                "train_model_seeds": model_seeds if model_seeds else None,
-                "nequip_bin_dir": args.nequip_bin_dir,
-                "nequip_command": args.nequip_command,
-                "nequip_deploy_command": args.nequip_deploy_command,
-                "train_run": True,
-                "deploy_run": True,
-            }
-        )
-        deployed_models = train_result.get("deployed_model_paths", [])
-        if len(deployed_models) < 2:
-            raise RuntimeError("Training/deploy did not produce two deployed models required for AL.")
+        # Stage 1: train/deploy
+        if cycle_state["stage"] in {"start"}:
+            train_workdir = cycle_dir / "train"
+            train_result = train_nequip_node(
+                {
+                    "train_dataset_extxyz": str(current_dataset),
+                    "train_config_template": args.train_config_template,
+                    "train_config_path": str(train_workdir / "full.auto.yaml"),
+                    "train_workdir": str(train_workdir),
+                    "train_val_ratio": args.train_val_ratio,
+                    "train_num_models": args.train_num_models,
+                    "train_model_seeds": model_seeds if model_seeds else None,
+                    "nequip_bin_dir": args.nequip_bin_dir,
+                    "nequip_command": args.nequip_command,
+                    "nequip_deploy_command": args.nequip_deploy_command,
+                    "train_run": True,
+                    "deploy_run": True,
+                }
+            )
+            deployed_models = train_result.get("deployed_model_paths", [])
+            if len(deployed_models) < 2:
+                raise RuntimeError("Training/deploy did not produce two deployed models required for AL.")
+            cycle_state["deployed_models"] = deployed_models
+            cycle_state["stage"] = "train_done"
+            _save_json(cycle_state_path, cycle_state)
+        else:
+            deployed_models = cycle_state.get("deployed_models", [])
+            if len(deployed_models) < 2:
+                raise RuntimeError(
+                    f"Cycle {cycle_idx} resume state is missing deployed models: {cycle_state_path}"
+                )
 
-        al_workdir = cycle_dir / "al"
-        al_workdir.mkdir(parents=True, exist_ok=True)
-        al_selected_path = al_workdir / "al_selected_non_eq_geoms.extxyz"
-        al_result = active_learning_node(
-            {
-                "al_input_structure": str(al_input_structure),
-                "deployed_model_paths": deployed_models,
-                "al_output_extxyz": str(al_selected_path),
-                "al_md_steps": args.al_md_steps,
-                "al_timestep_fs": args.al_timestep_fs,
-                "al_temperature_k": args.al_temperature_k,
-                "al_friction": args.al_friction,
-                "al_energy_eval_interval": args.al_energy_eval_interval,
-                "al_structure_check_interval": args.al_structure_check_interval,
-                "al_min_interatomic_distance": args.al_min_interatomic_distance,
-                "al_max_distance_scale": args.al_max_distance_scale,
-                "al_recovery_stride_steps": args.al_recovery_stride_steps,
-                "al_recovery_enabled": True,
-                "al_threshold_warmup_steps": args.al_threshold_warmup_steps,
-                "al_target_conformers": args.al_target_conformers,
-                "al_rng_seed": args.al_rng_seed + cycle_idx - 1,
-                "al_device": args.al_device,
-            }
-        )
+        # Stage 2: active learning
+        if cycle_state["stage"] in {"train_done"}:
+            al_workdir = cycle_dir / "al"
+            al_workdir.mkdir(parents=True, exist_ok=True)
+            al_selected_path = al_workdir / "al_selected_non_eq_geoms.extxyz"
+            al_result = active_learning_node(
+                {
+                    "al_input_structure": str(al_input_structure),
+                    "deployed_model_paths": deployed_models,
+                    "al_output_extxyz": str(al_selected_path),
+                    "al_md_steps": args.al_md_steps,
+                    "al_timestep_fs": args.al_timestep_fs,
+                    "al_temperature_k": args.al_temperature_k,
+                    "al_friction": args.al_friction,
+                    "al_energy_eval_interval": args.al_energy_eval_interval,
+                    "al_structure_check_interval": args.al_structure_check_interval,
+                    "al_min_interatomic_distance": args.al_min_interatomic_distance,
+                    "al_max_distance_scale": args.al_max_distance_scale,
+                    "al_recovery_stride_steps": args.al_recovery_stride_steps,
+                    "al_recovery_enabled": True,
+                    "al_threshold_warmup_steps": args.al_threshold_warmup_steps,
+                    "al_target_conformers": args.al_target_conformers,
+                    "al_rng_seed": args.al_rng_seed + cycle_idx - 1,
+                    "al_device": args.al_device,
+                }
+            )
+            selected_count = int(al_result.get("al_selected_count", 0))
+            if selected_count < 1:
+                raise RuntimeError(f"Cycle {cycle_idx}: AL produced no conformers for QM.")
+            cycle_state["al_selected_path"] = str(al_selected_path)
+            cycle_state["al_selected_count"] = selected_count
+            cycle_state["al_recovery_selected_count"] = int(
+                al_result.get("al_recovery_selected_count", 0)
+            )
+            cycle_state["al_terminated_early"] = bool(al_result.get("al_terminated_early", False))
+            cycle_state["al_termination_reason"] = str(al_result.get("al_termination_reason", ""))
+            cycle_state["stage"] = "al_done"
+            _save_json(cycle_state_path, cycle_state)
 
-        selected_count = int(al_result.get("al_selected_count", 0))
-        if selected_count < 1:
-            raise RuntimeError(f"Cycle {cycle_idx}: AL produced no conformers for QM.")
+        # Stage 3: QM for AL-selected frames
+        if cycle_state["stage"] in {"al_done"}:
+            al_selected_path = Path(cycle_state["al_selected_path"]).resolve()
+            qm_workdir = cycle_dir / "qm"
+            qm_result = qm_calculation_node(
+                {
+                    "qm_input_extxyz": str(al_selected_path),
+                    "qm_orca_path": args.qm_orca_path,
+                    "qm_calc_type": args.qm_calc_type,
+                    "qm_calculator_type": args.qm_calculator_type,
+                    "qm_n_core": args.qm_n_core,
+                    "qm_workdir": str(qm_workdir),
+                }
+            )
+            qm_extxyz_path = Path(qm_result["qm_output_extxyz"]).resolve()
+            cycle_state["qm_output_extxyz"] = str(qm_extxyz_path)
+            cycle_state["stage"] = "qm_done"
+            _save_json(cycle_state_path, cycle_state)
+        else:
+            qm_extxyz_path = Path(cycle_state["qm_output_extxyz"]).resolve()
 
-        qm_workdir = cycle_dir / "qm"
-        qm_result = qm_calculation_node(
-            {
-                "qm_input_extxyz": str(al_selected_path),
-                "qm_orca_path": args.qm_orca_path,
-                "qm_calc_type": args.qm_calc_type,
-                "qm_calculator_type": args.qm_calculator_type,
-                "qm_n_core": args.qm_n_core,
-                "qm_workdir": str(qm_workdir),
-            }
-        )
-        qm_extxyz_path = Path(qm_result["qm_output_extxyz"]).resolve()
-
-        enriched_path = cycle_dir / f"enriched_dataset_cycle_{cycle_idx:02d}.extxyz"
-        total_structures = _merge_extxyz([current_dataset, qm_extxyz_path], enriched_path)
-        current_dataset = enriched_path
+        # Stage 4: enrich dataset
+        if cycle_state["stage"] in {"qm_done"}:
+            enriched_path = cycle_dir / f"enriched_dataset_cycle_{cycle_idx:02d}.extxyz"
+            total_structures = _merge_extxyz([current_dataset, qm_extxyz_path], enriched_path)
+            cycle_state["enriched_dataset_out"] = str(enriched_path)
+            cycle_state["enriched_total_structures"] = total_structures
+            cycle_state["stage"] = "enrich_done"
+            _save_json(cycle_state_path, cycle_state)
+            current_dataset = enriched_path
+        else:
+            enriched_path = Path(cycle_state["enriched_dataset_out"]).resolve()
+            total_structures = int(cycle_state["enriched_total_structures"])
+            current_dataset = enriched_path
 
         cycle_report = {
             "cycle": cycle_idx,
-            "train_dataset_in": str(train_result["train_dataset_extxyz"]),
-            "deployed_models": deployed_models,
-            "al_selected_count": selected_count,
-            "al_recovery_selected_count": int(al_result.get("al_recovery_selected_count", 0)),
-            "al_terminated_early": bool(al_result.get("al_terminated_early", False)),
-            "al_termination_reason": str(al_result.get("al_termination_reason", "")),
-            "qm_output_extxyz": str(qm_extxyz_path),
-            "enriched_dataset_out": str(enriched_path),
-            "enriched_total_structures": total_structures,
+            "train_dataset_in": cycle_state["train_dataset_in"],
+            "deployed_models": cycle_state["deployed_models"],
+            "al_selected_count": int(cycle_state["al_selected_count"]),
+            "al_recovery_selected_count": int(cycle_state.get("al_recovery_selected_count", 0)),
+            "al_terminated_early": bool(cycle_state.get("al_terminated_early", False)),
+            "al_termination_reason": str(cycle_state.get("al_termination_reason", "")),
+            "qm_output_extxyz": cycle_state["qm_output_extxyz"],
+            "enriched_dataset_out": cycle_state["enriched_dataset_out"],
+            "enriched_total_structures": int(cycle_state["enriched_total_structures"]),
         }
         cycle_reports.append(cycle_report)
         print(
@@ -256,7 +345,6 @@ def main():
             f"enriched_total={total_structures}"
         )
 
-    report_path = workdir / "cycle_report.json"
     final_report = {
         "bootstrap": bootstrap_report,
         "cycles": cycle_reports,
