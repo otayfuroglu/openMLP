@@ -207,11 +207,11 @@ Slurm template notes:
 
 - Provide two templates: one for QM, one for training.
 - Optional placeholders supported in templates:
-  - `{{OPENMLP_COMMAND}}`
-  - `{{OPENMLP_JOB_NAME}}`
-  - `{{OPENMLP_WORKDIR}}`
+- `{{OPENMLP_COMMAND}}`
+- `{{OPENMLP_JOB_NAME}}`
+- `{{OPENMLP_WORKDIR}}`
 - If `{{OPENMLP_COMMAND}}` is not present, OpenMLP appends the command to the end of the template.
-- `--qm-submit-jobs` controls how many QM chunk jobs are submitted per QM stage.
+- `--qm-submit-jobs` controls how many QM submissions are launched on the same input extxyz.
 
 If you already have an initial QM-labeled dataset, skip bootstrap:
 

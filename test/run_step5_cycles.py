@@ -47,30 +47,6 @@ def _save_json(path: Path, data: Dict):
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
-def _split_extxyz(input_path: Path, n_jobs: int, out_dir: Path) -> List[Path]:
-    atoms_list = _read_atoms(input_path)
-    if not atoms_list:
-        raise ValueError(f"No structures found in: {input_path}")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    n_chunks = max(1, min(int(n_jobs), len(atoms_list)))
-    if n_chunks == 1:
-        single = out_dir / input_path.name
-        write(str(single), atoms_list, format="extxyz")
-        return [single]
-
-    chunk_paths: List[Path] = []
-    chunk_size = (len(atoms_list) + n_chunks - 1) // n_chunks
-    for chunk_idx in range(n_chunks):
-        start = chunk_idx * chunk_size
-        end = min((chunk_idx + 1) * chunk_size, len(atoms_list))
-        if start >= end:
-            break
-        chunk_path = out_dir / f"{input_path.stem}.chunk{chunk_idx + 1:03d}.extxyz"
-        write(str(chunk_path), atoms_list[start:end], format="extxyz")
-        chunk_paths.append(chunk_path)
-    return chunk_paths
-
-
 def _build_slurm_script(
     template_path: Path,
     out_path: Path,
@@ -150,22 +126,21 @@ def _run_qm_slurm(
     if not runner_script.exists():
         raise FileNotFoundError(f"QM runner script not found: {runner_script}")
     qm_workdir.mkdir(parents=True, exist_ok=True)
-    chunks_dir = qm_workdir / "chunks"
-    chunk_paths = _split_extxyz(qm_input_extxyz, qm_submit_jobs, chunks_dir)
+    qm_input_staged = qm_workdir / qm_input_extxyz.name
+    if qm_input_extxyz.resolve() != qm_input_staged.resolve():
+        qm_input_staged.write_bytes(qm_input_extxyz.read_bytes())
 
     job_ids: List[str] = []
-    expected_outputs: List[Path] = []
+    expected_output = qm_workdir / f"{qm_calc_type}_{qm_input_staged.name}"
     slurm_scripts_dir = qm_workdir / "slurm_scripts"
-    for idx, chunk_path in enumerate(chunk_paths, start=1):
-        expected_output = qm_workdir / f"{qm_calc_type}_{chunk_path.name}"
-        expected_outputs.append(expected_output)
+    for idx in range(1, int(qm_submit_jobs) + 1):
         marker_path = qm_workdir / f"qm_job_{idx:03d}.ok"
         log_path = qm_workdir / f"qm_job_{idx:03d}.log"
         cmd = (
             f"set -euo pipefail\n"
             f"cd {shlex.quote(str(qm_workdir))}\n"
             f"python {shlex.quote(str(runner_script))} "
-            f"-in_extxyz {shlex.quote(str(chunk_path))} "
+            f"-in_extxyz {shlex.quote(str(qm_input_staged))} "
             f"-orca_path {shlex.quote(str(qm_orca_path))} "
             f"-calc_type {shlex.quote(str(qm_calc_type))} "
             f"-calculator_type {shlex.quote(str(qm_calculator_type))} "
@@ -184,21 +159,24 @@ def _run_qm_slurm(
 
     _wait_for_jobs(job_ids, poll_seconds=poll_seconds)
 
-    for idx, expected_output in enumerate(expected_outputs, start=1):
+    success_markers = 0
+    for idx in range(1, int(qm_submit_jobs) + 1):
         marker_path = qm_workdir / f"qm_job_{idx:03d}.ok"
-        if not marker_path.exists():
-            raise RuntimeError(
-                f"QM Slurm job {idx} finished without success marker: {marker_path}. "
-                f"Check logs in {qm_workdir}."
-            )
-        if not expected_output.exists():
-            raise FileNotFoundError(f"Expected QM chunk output not found: {expected_output}")
-
-    merged_out = qm_workdir / f"{qm_calc_type}_{qm_input_extxyz.name}"
-    merged_count = _merge_extxyz(expected_outputs, merged_out)
-    merged_csv = merged_out.with_suffix(".csv")
-    print(f"QM Slurm merge: {len(expected_outputs)} chunks, {merged_count} structures.")
-    return merged_out, merged_csv
+        if marker_path.exists():
+            success_markers += 1
+    if success_markers < 1:
+        raise RuntimeError(
+            f"All submitted QM jobs failed (0/{qm_submit_jobs} success markers). "
+            f"Check logs in {qm_workdir}."
+        )
+    if not expected_output.exists():
+        raise FileNotFoundError(f"Expected QM output not found: {expected_output}")
+    output_count = len(_read_atoms(expected_output))
+    print(
+        f"QM Slurm completed: submissions={qm_submit_jobs}, success_markers={success_markers}, "
+        f"output_structures={output_count}."
+    )
+    return expected_output, expected_output.with_suffix(".csv")
 
 
 def _train_deploy_slurm(
