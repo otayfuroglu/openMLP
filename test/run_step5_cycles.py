@@ -92,6 +92,17 @@ def parse_args():
         default="",
         help="Comma-separated CUDA devices for model-parallel training, e.g. 0,1",
     )
+    parser.add_argument("--train-timeout-seconds", type=int, default=0)
+    parser.add_argument(
+        "--train-sequential",
+        action="store_true",
+        help="Run model trainings sequentially instead of parallel.",
+    )
+    parser.add_argument(
+        "--disable-sequential-fallback",
+        action="store_true",
+        help="Disable fallback to sequential training when parallel timeout occurs.",
+    )
     parser.add_argument("--nequip-command", default="nequip-train")
     parser.add_argument("--nequip-deploy-command", default="nequip-deploy")
     parser.add_argument("--nequip-bin-dir", default="")
@@ -262,6 +273,9 @@ def main():
                 "train_num_models": args.train_num_models,
                 "train_model_seeds": model_seeds if model_seeds else None,
                 "train_cuda_devices": args.train_cuda_devices,
+                "train_timeout_seconds": args.train_timeout_seconds,
+                "train_parallel": not args.train_sequential,
+                "train_retry_sequential_on_timeout": not args.disable_sequential_fallback,
                 "nequip_bin_dir": args.nequip_bin_dir,
                     "nequip_command": args.nequip_command,
                     "nequip_deploy_command": args.nequip_deploy_command,

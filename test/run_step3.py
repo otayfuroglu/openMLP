@@ -95,6 +95,22 @@ def parse_args():
         help="Comma-separated CUDA devices for parallel models, e.g. 0,1",
     )
     parser.add_argument(
+        "--train-timeout-seconds",
+        type=int,
+        default=0,
+        help="Timeout for training stage (0 disables timeout).",
+    )
+    parser.add_argument(
+        "--train-sequential",
+        action="store_true",
+        help="Run model trainings sequentially instead of parallel.",
+    )
+    parser.add_argument(
+        "--disable-sequential-fallback",
+        action="store_true",
+        help="Do not retry sequentially when parallel training times out.",
+    )
+    parser.add_argument(
         "--nequip-command",
         default="nequip-train",
         help="NequIP CLI command.",
@@ -144,6 +160,9 @@ def main():
         "train_num_models": args.train_num_models,
         "train_model_seeds": args.train_model_seeds,
         "train_cuda_devices": args.train_cuda_devices,
+        "train_timeout_seconds": args.train_timeout_seconds,
+        "train_parallel": not args.train_sequential,
+        "train_retry_sequential_on_timeout": not args.disable_sequential_fallback,
         "nequip_bin_dir": args.nequip_bin_dir,
         "nequip_command": args.nequip_command,
         "nequip_deploy_command": args.nequip_deploy_command,

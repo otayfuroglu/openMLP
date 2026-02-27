@@ -31,6 +31,8 @@ class PipelineState(TypedDict, total=False):
     train_cuda_devices: List[str]
     train_root: str
     train_run: bool
+    train_parallel: bool
+    train_retry_sequential_on_timeout: bool
     deploy_run: bool
     nequip_bin_dir: str
     nequip_command: str

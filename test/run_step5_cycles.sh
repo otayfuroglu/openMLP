@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${BOOTSTRAP_STRUCTURE:=$SCRIPT_DIR/MgF2.xyz}"
 : "${NEQUIP_BIN_DIR:=}"
 : "${TRAIN_CUDA_DEVICES:=}"
+: "${TRAIN_TIMEOUT_SECONDS:=21600}"
 
 python "$SCRIPT_DIR/run_step5_cycles.py" \
   --bootstrap-input-structure "$BOOTSTRAP_STRUCTURE" \
@@ -21,6 +22,7 @@ python "$SCRIPT_DIR/run_step5_cycles.py" \
   --train-val-ratio 0.1 \
   --train-num-models 2 \
   --train-cuda-devices "$TRAIN_CUDA_DEVICES" \
+  --train-timeout-seconds "$TRAIN_TIMEOUT_SECONDS" \
   --nequip-command "nequip-train" \
   --nequip-deploy-command "nequip-deploy" \
   --nequip-bin-dir "$NEQUIP_BIN_DIR" \
