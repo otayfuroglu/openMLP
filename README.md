@@ -90,12 +90,6 @@ Optional GPU split for parallel models:
 export TRAIN_CUDA_DEVICES=0,1
 ```
 
-Training hang mitigation:
-
-- set `TRAIN_TIMEOUT_SECONDS` (e.g. `21600`) to stop stalled parallel training
-- by default, timeout automatically retries sequentially
-- force sequential directly with `--train-sequential`
-
 This writes seed-specific auto configs such as `test/full.auto.seed123.yaml`.
 
 Ensemble behavior:
@@ -183,7 +177,6 @@ export ORCA_PATH=/path/to/orca
 export BOOTSTRAP_STRUCTURE=/path/to/MgF2.xyz
 export NEQUIP_BIN_DIR=/path/to/nequip/bin
 export TRAIN_CUDA_DEVICES=0,1
-export TRAIN_TIMEOUT_SECONDS=21600
 bash test/run_step5_cycles.sh
 ```
 

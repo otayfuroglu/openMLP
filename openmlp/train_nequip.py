@@ -1,7 +1,6 @@
 from pathlib import Path
 import shlex
 import subprocess
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ase import Atoms
@@ -186,9 +185,6 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
     model_seeds = _resolve_model_seeds(state, base_seed)
 
     run_training = bool(state.get("train_run", True))
-    train_timeout_seconds = int(state.get("train_timeout_seconds", 0))
-    train_parallel = bool(state.get("train_parallel", True))
-    retry_sequential_on_timeout = bool(state.get("train_retry_sequential_on_timeout", True))
     deploy_run = bool(state.get("deploy_run", run_training))
     nequip_bin_dir = state.get("nequip_bin_dir")
     train_command_parts_base = _resolve_command_parts(
@@ -247,7 +243,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
             env["CUDA_VISIBLE_DEVICES"] = device
             return env
 
-        def _run_parallel() -> Tuple[List[Tuple[List[str], Path, int]], bool]:
+        def _run_parallel() -> List[Tuple[List[str], Path, int]]:
             processes: List[subprocess.Popen] = []
             log_handles = []
             for idx, (cmd_parts, model_cuda_device) in enumerate(zip(model_cmd_parts, model_cuda_devices)):
@@ -265,9 +261,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                 )
 
             failures: List[Tuple[List[str], Path, int]] = []
-            start_time = time.time()
             pending = set(range(len(processes)))
-            timed_out = False
             while pending:
                 for idx in list(pending):
                     process = processes[idx]
@@ -278,20 +272,8 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                     if return_code != 0:
                         failures.append((model_cmd_parts[idx], model_log_path, int(return_code)))
                     pending.remove(idx)
-
-                if pending and train_timeout_seconds > 0:
-                    elapsed = time.time() - start_time
-                    if elapsed > train_timeout_seconds:
-                        timed_out = True
-                        for idx in list(pending):
-                            processes[idx].terminate()
-                        for idx in list(pending):
-                            try:
-                                processes[idx].wait(timeout=15)
-                            except subprocess.TimeoutExpired:
-                                processes[idx].kill()
-                        break
                 if pending:
+                    import time
                     time.sleep(1.0)
             for log_handle in log_handles:
                 try:
@@ -299,36 +281,9 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                     log_handle.close()
                 except Exception:
                     pass
-            return failures, timed_out
-
-        def _run_sequential() -> List[Tuple[List[str], Path, int]]:
-            failures: List[Tuple[List[str], Path, int]] = []
-            for idx, (cmd_parts, model_cuda_device) in enumerate(zip(model_cmd_parts, model_cuda_devices)):
-                model_log_path = Path(model_log_paths[idx])
-                with model_log_path.open("w", encoding="utf-8") as log_handle:
-                    completed = subprocess.run(
-                        cmd_parts,
-                        cwd=model_exec_dirs[idx],
-                        env=_child_env(model_cuda_device),
-                        stdout=log_handle,
-                        stderr=subprocess.STDOUT,
-                        check=False,
-                    )
-                if completed.returncode != 0:
-                    failures.append((cmd_parts, model_log_path, int(completed.returncode)))
-                    break
             return failures
 
-        if train_parallel:
-            failures, timed_out = _run_parallel()
-            if timed_out and retry_sequential_on_timeout:
-                failures = _run_sequential()
-            elif timed_out:
-                raise RuntimeError(
-                    f"NequIP training timed out after {train_timeout_seconds} seconds."
-                )
-        else:
-            failures = _run_sequential()
+        failures = _run_parallel()
 
         if failures:
             cmd_parts, model_log_path, return_code = failures[0]
