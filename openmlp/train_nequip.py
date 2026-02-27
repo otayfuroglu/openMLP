@@ -204,6 +204,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
     model_config_paths: List[str] = []
     model_log_paths: List[str] = []
     model_cmd_parts: List[List[str]] = []
+    model_exec_dirs: List[str] = []
     model_cuda_devices = _resolve_cuda_devices(state, len(model_seeds))
     model_root_dirs: List[str] = []
     model_run_names: List[str] = []
@@ -233,6 +234,9 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
 
         model_log_path = workdir / f"nequip_train_{seed_suffix}.log"
         model_log_paths.append(str(model_log_path))
+        exec_dir = workdir / f"train_exec_{seed_suffix}"
+        exec_dir.mkdir(parents=True, exist_ok=True)
+        model_exec_dirs.append(str(exec_dir))
     if run_training:
         def _child_env(device: Optional[str]):
             if device is None:
@@ -245,15 +249,18 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
 
         def _run_parallel() -> Tuple[List[Tuple[List[str], Path, int]], bool]:
             processes: List[subprocess.Popen] = []
-            for cmd_parts, model_cuda_device in zip(model_cmd_parts, model_cuda_devices):
+            log_handles = []
+            for idx, (cmd_parts, model_cuda_device) in enumerate(zip(model_cmd_parts, model_cuda_devices)):
+                model_log_path = Path(model_log_paths[idx])
+                log_handle = model_log_path.open("w", encoding="utf-8")
+                log_handles.append(log_handle)
                 processes.append(
                     subprocess.Popen(
                         cmd_parts,
-                        cwd=str(workdir),
+                        cwd=model_exec_dirs[idx],
                         env=_child_env(model_cuda_device),
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
+                        stdout=log_handle,
+                        stderr=subprocess.STDOUT,
                     )
                 )
 
@@ -267,12 +274,7 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                     return_code = process.poll()
                     if return_code is None:
                         continue
-                    stdout_text, stderr_text = process.communicate()
                     model_log_path = Path(model_log_paths[idx])
-                    model_log_path.write_text(
-                        (stdout_text or "") + "\n" + (stderr_text or ""),
-                        encoding="utf-8",
-                    )
                     if return_code != 0:
                         failures.append((model_cmd_parts[idx], model_log_path, int(return_code)))
                     pending.remove(idx)
@@ -291,24 +293,27 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                         break
                 if pending:
                     time.sleep(1.0)
+            for log_handle in log_handles:
+                try:
+                    log_handle.flush()
+                    log_handle.close()
+                except Exception:
+                    pass
             return failures, timed_out
 
         def _run_sequential() -> List[Tuple[List[str], Path, int]]:
             failures: List[Tuple[List[str], Path, int]] = []
             for idx, (cmd_parts, model_cuda_device) in enumerate(zip(model_cmd_parts, model_cuda_devices)):
-                completed = subprocess.run(
-                    cmd_parts,
-                    cwd=str(workdir),
-                    env=_child_env(model_cuda_device),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
                 model_log_path = Path(model_log_paths[idx])
-                model_log_path.write_text(
-                    (completed.stdout or "") + "\n" + (completed.stderr or ""),
-                    encoding="utf-8",
-                )
+                with model_log_path.open("w", encoding="utf-8") as log_handle:
+                    completed = subprocess.run(
+                        cmd_parts,
+                        cwd=model_exec_dirs[idx],
+                        env=_child_env(model_cuda_device),
+                        stdout=log_handle,
+                        stderr=subprocess.STDOUT,
+                        check=False,
+                    )
                 if completed.returncode != 0:
                     failures.append((cmd_parts, model_log_path, int(completed.returncode)))
                     break
