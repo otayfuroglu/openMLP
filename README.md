@@ -212,6 +212,7 @@ Slurm template notes:
 - `{{OPENMLP_WORKDIR}}`
 - If `{{OPENMLP_COMMAND}}` is not present, OpenMLP appends the command to the end of the template.
 - `--qm-submit-jobs` controls how many QM submissions are launched on the same input extxyz.
+- QM uses the same Python as NequIP when `--nequip-bin-dir` is set (uses `<nequip-bin-dir>/python`).
 
 If you already have an initial QM-labeled dataset, skip bootstrap:
 

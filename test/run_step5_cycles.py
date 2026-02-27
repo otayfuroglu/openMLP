@@ -47,6 +47,14 @@ def _save_json(path: Path, data: Dict):
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def _resolve_python_executable(nequip_bin_dir: str) -> str:
+    if nequip_bin_dir.strip():
+        candidate = (Path(nequip_bin_dir).resolve() / "python")
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
 def _build_slurm_script(
     template_path: Path,
     out_path: Path,
@@ -119,6 +127,7 @@ def _run_qm_slurm(
     qm_calc_type: str,
     qm_calculator_type: str,
     qm_orca_path: str,
+    qm_python_path: str,
     qm_n_core: int,
     poll_seconds: int,
 ) -> Tuple[Path, Path]:
@@ -139,7 +148,7 @@ def _run_qm_slurm(
         cmd = (
             f"set -euo pipefail\n"
             f"cd {shlex.quote(str(qm_workdir))}\n"
-            f"python {shlex.quote(str(runner_script))} "
+            f"{shlex.quote(str(qm_python_path))} {shlex.quote(str(runner_script))} "
             f"-in_extxyz {shlex.quote(str(qm_input_staged))} "
             f"-orca_path {shlex.quote(str(qm_orca_path))} "
             f"-calc_type {shlex.quote(str(qm_calc_type))} "
@@ -365,6 +374,8 @@ def main():
         raise ValueError("--cycles must be >= 1")
     if args.qm_submit_jobs < 1:
         raise ValueError("--qm-submit-jobs must be >= 1")
+    qm_python_path = _resolve_python_executable(args.nequip_bin_dir)
+    print(f"QM python: {qm_python_path}")
 
     al_input_structure = Path(args.al_input_structure).resolve()
     if not al_input_structure.exists():
@@ -438,6 +449,7 @@ def main():
                     qm_calc_type=args.qm_calc_type,
                     qm_calculator_type=args.qm_calculator_type,
                     qm_orca_path=args.qm_orca_path,
+                    qm_python_path=qm_python_path,
                     qm_n_core=args.qm_n_core,
                     poll_seconds=args.slurm_poll_seconds,
                 )
@@ -447,6 +459,7 @@ def main():
                     {
                         "qm_input_extxyz": str(bootstrap_non_eq_path),
                         "qm_orca_path": args.qm_orca_path,
+                        "qm_python_path": qm_python_path,
                         "qm_calc_type": args.qm_calc_type,
                         "qm_calculator_type": args.qm_calculator_type,
                         "qm_n_core": args.qm_n_core,
@@ -587,6 +600,7 @@ def main():
                     qm_calc_type=args.qm_calc_type,
                     qm_calculator_type=args.qm_calculator_type,
                     qm_orca_path=args.qm_orca_path,
+                    qm_python_path=qm_python_path,
                     qm_n_core=args.qm_n_core,
                     poll_seconds=args.slurm_poll_seconds,
                 )
@@ -595,6 +609,7 @@ def main():
                     {
                         "qm_input_extxyz": str(al_selected_path),
                         "qm_orca_path": args.qm_orca_path,
+                        "qm_python_path": qm_python_path,
                         "qm_calc_type": args.qm_calc_type,
                         "qm_calculator_type": args.qm_calculator_type,
                         "qm_n_core": args.qm_n_core,

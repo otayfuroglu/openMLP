@@ -34,8 +34,9 @@ def qm_calculation_node(state: PipelineState) -> PipelineState:
     if qm_input_path.resolve() != staged_input_path.resolve():
         shutil.copy2(str(qm_input_path), str(staged_input_path))
 
+    qm_python = str(state.get("qm_python_path", "python"))
     command = [
-        "python",
+        qm_python,
         str(runner_script),
         "-in_extxyz",
         str(staged_input_path),

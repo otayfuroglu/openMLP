@@ -13,6 +13,7 @@ class PipelineState(TypedDict, total=False):
     generated_files: List[str]
     qm_input_extxyz: str
     qm_orca_path: str
+    qm_python_path: str
     qm_calc_type: str
     qm_calculator_type: str
     qm_n_core: int
