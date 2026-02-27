@@ -177,6 +177,9 @@ export ORCA_PATH=/path/to/orca
 export BOOTSTRAP_STRUCTURE=/path/to/MgF2.xyz
 export NEQUIP_BIN_DIR=/path/to/nequip/bin
 export TRAIN_CUDA_DEVICES=0,1
+export QM_SLURM_TEMPLATE=/path/to/qm_submit_template.sh
+export TRAIN_SLURM_TEMPLATE=/path/to/train_submit_template.sh
+export QM_SUBMIT_JOBS=8
 bash test/run_step5_cycles.sh
 ```
 
@@ -190,12 +193,25 @@ python test/run_step5_cycles.py \
   --cycles 5 \
   --workdir test/cycle_runs \
   --qm-orca-path /path/to/orca \
+  --qm-slurm-template /path/to/qm_submit_template.sh \
+  --qm-submit-jobs 8 \
+  --train-slurm-template /path/to/train_submit_template.sh \
   --nequip-bin-dir /path/to/nequip/bin \
   --al-cycle-temp-start-k 100 \
   --al-cycle-temp-step-k 50 \
   --al-cycle-temp-max-k 500 \
   --al-target-conformers 50
 ```
+
+Slurm template notes:
+
+- Provide two templates: one for QM, one for training.
+- Optional placeholders supported in templates:
+  - `{{OPENMLP_COMMAND}}`
+  - `{{OPENMLP_JOB_NAME}}`
+  - `{{OPENMLP_WORKDIR}}`
+- If `{{OPENMLP_COMMAND}}` is not present, OpenMLP appends the command to the end of the template.
+- `--qm-submit-jobs` controls how many QM chunk jobs are submitted per QM stage.
 
 If you already have an initial QM-labeled dataset, skip bootstrap:
 

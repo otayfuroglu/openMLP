@@ -1,8 +1,11 @@
 import argparse
 import json
+import shlex
+import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from ase import Atoms
 from ase.io import read, write
@@ -44,6 +47,226 @@ def _save_json(path: Path, data: Dict):
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def _split_extxyz(input_path: Path, n_jobs: int, out_dir: Path) -> List[Path]:
+    atoms_list = _read_atoms(input_path)
+    if not atoms_list:
+        raise ValueError(f"No structures found in: {input_path}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    n_chunks = max(1, min(int(n_jobs), len(atoms_list)))
+    if n_chunks == 1:
+        single = out_dir / input_path.name
+        write(str(single), atoms_list, format="extxyz")
+        return [single]
+
+    chunk_paths: List[Path] = []
+    chunk_size = (len(atoms_list) + n_chunks - 1) // n_chunks
+    for chunk_idx in range(n_chunks):
+        start = chunk_idx * chunk_size
+        end = min((chunk_idx + 1) * chunk_size, len(atoms_list))
+        if start >= end:
+            break
+        chunk_path = out_dir / f"{input_path.stem}.chunk{chunk_idx + 1:03d}.extxyz"
+        write(str(chunk_path), atoms_list[start:end], format="extxyz")
+        chunk_paths.append(chunk_path)
+    return chunk_paths
+
+
+def _build_slurm_script(
+    template_path: Path,
+    out_path: Path,
+    command: str,
+    job_name: str,
+    workdir: Path,
+) -> Path:
+    template_text = template_path.read_text(encoding="utf-8")
+    rendered = (
+        template_text.replace("{{OPENMLP_COMMAND}}", command)
+        .replace("{{OPENMLP_JOB_NAME}}", job_name)
+        .replace("{{OPENMLP_WORKDIR}}", str(workdir))
+    )
+    if "{{OPENMLP_COMMAND}}" not in template_text:
+        rendered = rendered.rstrip() + "\n\n" + command + "\n"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(rendered, encoding="utf-8")
+    return out_path
+
+
+def _submit_sbatch(script_path: Path, cwd: Path) -> str:
+    completed = subprocess.run(
+        ["sbatch", str(script_path)],
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "sbatch submission failed.\n"
+            f"Script: {script_path}\n"
+            f"stdout:\n{completed.stdout}\n"
+            f"stderr:\n{completed.stderr}"
+        )
+    stdout = (completed.stdout or "").strip()
+    for token in reversed(stdout.split()):
+        if token.isdigit():
+            return token
+    raise RuntimeError(f"Could not parse Slurm job id from sbatch output: {stdout}")
+
+
+def _wait_for_jobs(job_ids: List[str], poll_seconds: int) -> None:
+    pending = set(job_ids)
+    while pending:
+        for job_id in list(pending):
+            completed = subprocess.run(
+                ["squeue", "-h", "-j", job_id],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"squeue failed while waiting for job {job_id}.\n"
+                    f"stdout:\n{completed.stdout}\n"
+                    f"stderr:\n{completed.stderr}"
+                )
+            if not (completed.stdout or "").strip():
+                pending.remove(job_id)
+        if pending:
+            time.sleep(max(2, int(poll_seconds)))
+
+
+def _run_qm_slurm(
+    qm_input_extxyz: Path,
+    qm_workdir: Path,
+    qm_template: Path,
+    qm_submit_jobs: int,
+    qm_calc_type: str,
+    qm_calculator_type: str,
+    qm_orca_path: str,
+    qm_n_core: int,
+    poll_seconds: int,
+) -> Tuple[Path, Path]:
+    runner_script = PROJECT_ROOT / "openmlp" / "qm_calc" / "runCalculateGeomWithQM.py"
+    if not runner_script.exists():
+        raise FileNotFoundError(f"QM runner script not found: {runner_script}")
+    qm_workdir.mkdir(parents=True, exist_ok=True)
+    chunks_dir = qm_workdir / "chunks"
+    chunk_paths = _split_extxyz(qm_input_extxyz, qm_submit_jobs, chunks_dir)
+
+    job_ids: List[str] = []
+    expected_outputs: List[Path] = []
+    slurm_scripts_dir = qm_workdir / "slurm_scripts"
+    for idx, chunk_path in enumerate(chunk_paths, start=1):
+        expected_output = qm_workdir / f"{qm_calc_type}_{chunk_path.name}"
+        expected_outputs.append(expected_output)
+        marker_path = qm_workdir / f"qm_job_{idx:03d}.ok"
+        log_path = qm_workdir / f"qm_job_{idx:03d}.log"
+        cmd = (
+            f"set -euo pipefail\n"
+            f"cd {shlex.quote(str(qm_workdir))}\n"
+            f"python {shlex.quote(str(runner_script))} "
+            f"-in_extxyz {shlex.quote(str(chunk_path))} "
+            f"-orca_path {shlex.quote(str(qm_orca_path))} "
+            f"-calc_type {shlex.quote(str(qm_calc_type))} "
+            f"-calculator_type {shlex.quote(str(qm_calculator_type))} "
+            f"-n_core {int(qm_n_core)} "
+            f"> {shlex.quote(str(log_path))} 2>&1\n"
+            f"touch {shlex.quote(str(marker_path))}"
+        )
+        job_script = _build_slurm_script(
+            template_path=qm_template,
+            out_path=slurm_scripts_dir / f"submit_qm_{idx:03d}.sh",
+            command=cmd,
+            job_name=f"openmlp_qm_{idx:03d}",
+            workdir=qm_workdir,
+        )
+        job_ids.append(_submit_sbatch(job_script, qm_workdir))
+
+    _wait_for_jobs(job_ids, poll_seconds=poll_seconds)
+
+    for idx, expected_output in enumerate(expected_outputs, start=1):
+        marker_path = qm_workdir / f"qm_job_{idx:03d}.ok"
+        if not marker_path.exists():
+            raise RuntimeError(
+                f"QM Slurm job {idx} finished without success marker: {marker_path}. "
+                f"Check logs in {qm_workdir}."
+            )
+        if not expected_output.exists():
+            raise FileNotFoundError(f"Expected QM chunk output not found: {expected_output}")
+
+    merged_out = qm_workdir / f"{qm_calc_type}_{qm_input_extxyz.name}"
+    merged_count = _merge_extxyz(expected_outputs, merged_out)
+    merged_csv = merged_out.with_suffix(".csv")
+    print(f"QM Slurm merge: {len(expected_outputs)} chunks, {merged_count} structures.")
+    return merged_out, merged_csv
+
+
+def _train_deploy_slurm(
+    dataset_path: Path,
+    cycle_dir: Path,
+    args,
+    model_seeds: List[int],
+) -> Dict:
+    train_workdir = cycle_dir / "train"
+    prep_state = {
+        "train_dataset_extxyz": str(dataset_path),
+        "train_config_template": args.train_config_template,
+        "train_config_path": str(train_workdir / "full.auto.yaml"),
+        "train_workdir": str(train_workdir),
+        "train_val_ratio": args.train_val_ratio,
+        "train_num_models": args.train_num_models,
+        "train_model_seeds": model_seeds if model_seeds else None,
+        "train_cuda_devices": args.train_cuda_devices,
+        "nequip_bin_dir": args.nequip_bin_dir,
+        "nequip_command": args.nequip_command,
+        "nequip_deploy_command": args.nequip_deploy_command,
+        "train_run": False,
+        "deploy_run": False,
+    }
+    prep_result = train_nequip_node(prep_state)
+    command_parts_list = prep_result.get("train_model_command_parts", [])
+    exec_dirs = prep_result.get("train_model_exec_dirs", [])
+    if not command_parts_list or not exec_dirs:
+        raise RuntimeError("Training preparation did not produce model commands/exec dirs.")
+
+    job_ids: List[str] = []
+    train_template = Path(args.train_slurm_template).resolve()
+    if not train_template.exists():
+        raise FileNotFoundError(f"Training Slurm template not found: {train_template}")
+    slurm_scripts_dir = train_workdir / "slurm_scripts"
+    for idx, (parts, exec_dir) in enumerate(zip(command_parts_list, exec_dirs), start=1):
+        marker_path = train_workdir / f"train_job_{idx:03d}.ok"
+        log_path = train_workdir / f"train_job_{idx:03d}.log"
+        cmd = (
+            f"set -euo pipefail\n"
+            f"cd {shlex.quote(str(exec_dir))}\n"
+            f"{' '.join(shlex.quote(str(part)) for part in parts)} "
+            f"> {shlex.quote(str(log_path))} 2>&1\n"
+            f"touch {shlex.quote(str(marker_path))}"
+        )
+        job_script = _build_slurm_script(
+            template_path=train_template,
+            out_path=slurm_scripts_dir / f"submit_train_{idx:03d}.sh",
+            command=cmd,
+            job_name=f"openmlp_train_{idx:03d}",
+            workdir=Path(exec_dir),
+        )
+        job_ids.append(_submit_sbatch(job_script, train_workdir))
+    _wait_for_jobs(job_ids, poll_seconds=args.slurm_poll_seconds)
+    for idx in range(1, len(job_ids) + 1):
+        marker_path = train_workdir / f"train_job_{idx:03d}.ok"
+        if not marker_path.exists():
+            raise RuntimeError(
+                f"Training Slurm job {idx} finished without success marker: {marker_path}. "
+                f"Check logs in {train_workdir}."
+            )
+
+    deploy_state = dict(prep_state)
+    deploy_state["train_run"] = False
+    deploy_state["deploy_run"] = True
+    return train_nequip_node(deploy_state)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Step 5: Repeat QM -> train/deploy -> AL -> QM enrichment cycles."
@@ -79,6 +302,17 @@ def parse_args():
     parser.add_argument("--qm-calc-type", default="engrad")
     parser.add_argument("--qm-calculator-type", default="orca")
     parser.add_argument("--qm-n-core", type=int, default=24)
+    parser.add_argument(
+        "--qm-submit-jobs",
+        type=int,
+        default=1,
+        help="Number of parallel Slurm submissions for each QM step.",
+    )
+    parser.add_argument(
+        "--qm-slurm-template",
+        default="",
+        help="Optional Slurm script template for QM submission. If set, QM runs via sbatch.",
+    )
 
     parser.add_argument(
         "--train-config-template",
@@ -95,6 +329,17 @@ def parse_args():
     parser.add_argument("--nequip-command", default="nequip-train")
     parser.add_argument("--nequip-deploy-command", default="nequip-deploy")
     parser.add_argument("--nequip-bin-dir", default="")
+    parser.add_argument(
+        "--train-slurm-template",
+        default="",
+        help="Optional Slurm script template for training submission. If set, training runs via sbatch.",
+    )
+    parser.add_argument(
+        "--slurm-poll-seconds",
+        type=int,
+        default=15,
+        help="Polling interval while waiting Slurm jobs.",
+    )
 
     parser.add_argument("--al-md-steps", type=int, default=5000)
     parser.add_argument("--al-timestep-fs", type=float, default=1.0)
@@ -140,6 +385,8 @@ def main():
     args = parse_args()
     if args.cycles < 1:
         raise ValueError("--cycles must be >= 1")
+    if args.qm_submit_jobs < 1:
+        raise ValueError("--qm-submit-jobs must be >= 1")
 
     al_input_structure = Path(args.al_input_structure).resolve()
     if not al_input_structure.exists():
@@ -201,17 +448,34 @@ def main():
                     "displacement_attempts": args.bootstrap_displacement_attempts,
                 }
             )
-            bootstrap_qm = qm_calculation_node(
-                {
-                    "qm_input_extxyz": str(bootstrap_non_eq_path),
-                    "qm_orca_path": args.qm_orca_path,
-                    "qm_calc_type": args.qm_calc_type,
-                    "qm_calculator_type": args.qm_calculator_type,
-                    "qm_n_core": args.qm_n_core,
-                    "qm_workdir": str(bootstrap_dir / "qm"),
-                }
-            )
-            current_dataset = Path(bootstrap_qm["qm_output_extxyz"]).resolve()
+            if args.qm_slurm_template.strip():
+                qm_template = Path(args.qm_slurm_template).resolve()
+                if not qm_template.exists():
+                    raise FileNotFoundError(f"QM Slurm template not found: {qm_template}")
+                qm_out_extxyz, _ = _run_qm_slurm(
+                    qm_input_extxyz=bootstrap_non_eq_path,
+                    qm_workdir=(bootstrap_dir / "qm"),
+                    qm_template=qm_template,
+                    qm_submit_jobs=args.qm_submit_jobs,
+                    qm_calc_type=args.qm_calc_type,
+                    qm_calculator_type=args.qm_calculator_type,
+                    qm_orca_path=args.qm_orca_path,
+                    qm_n_core=args.qm_n_core,
+                    poll_seconds=args.slurm_poll_seconds,
+                )
+                current_dataset = qm_out_extxyz.resolve()
+            else:
+                bootstrap_qm = qm_calculation_node(
+                    {
+                        "qm_input_extxyz": str(bootstrap_non_eq_path),
+                        "qm_orca_path": args.qm_orca_path,
+                        "qm_calc_type": args.qm_calc_type,
+                        "qm_calculator_type": args.qm_calculator_type,
+                        "qm_n_core": args.qm_n_core,
+                        "qm_workdir": str(bootstrap_dir / "qm"),
+                    }
+                )
+                current_dataset = Path(bootstrap_qm["qm_output_extxyz"]).resolve()
             bootstrap_report = {
                 "source": "bootstrap_from_structure",
                 "bootstrap_input_structure": str(bootstrap_input),
@@ -251,24 +515,32 @@ def main():
 
         # Stage 1: train/deploy
         if cycle_state["stage"] in {"start"}:
-            train_workdir = cycle_dir / "train"
-            train_result = train_nequip_node(
-                {
-                    "train_dataset_extxyz": str(current_dataset),
-                    "train_config_template": args.train_config_template,
-                    "train_config_path": str(train_workdir / "full.auto.yaml"),
-                    "train_workdir": str(train_workdir),
-                    "train_val_ratio": args.train_val_ratio,
-                "train_num_models": args.train_num_models,
-                "train_model_seeds": model_seeds if model_seeds else None,
-                "train_cuda_devices": args.train_cuda_devices,
-                "nequip_bin_dir": args.nequip_bin_dir,
-                    "nequip_command": args.nequip_command,
-                    "nequip_deploy_command": args.nequip_deploy_command,
-                    "train_run": True,
-                    "deploy_run": True,
-                }
-            )
+            if args.train_slurm_template.strip():
+                train_result = _train_deploy_slurm(
+                    dataset_path=current_dataset,
+                    cycle_dir=cycle_dir,
+                    args=args,
+                    model_seeds=model_seeds,
+                )
+            else:
+                train_workdir = cycle_dir / "train"
+                train_result = train_nequip_node(
+                    {
+                        "train_dataset_extxyz": str(current_dataset),
+                        "train_config_template": args.train_config_template,
+                        "train_config_path": str(train_workdir / "full.auto.yaml"),
+                        "train_workdir": str(train_workdir),
+                        "train_val_ratio": args.train_val_ratio,
+                        "train_num_models": args.train_num_models,
+                        "train_model_seeds": model_seeds if model_seeds else None,
+                        "train_cuda_devices": args.train_cuda_devices,
+                        "nequip_bin_dir": args.nequip_bin_dir,
+                        "nequip_command": args.nequip_command,
+                        "nequip_deploy_command": args.nequip_deploy_command,
+                        "train_run": True,
+                        "deploy_run": True,
+                    }
+                )
             deployed_models = train_result.get("deployed_model_paths", [])
             if len(deployed_models) < 2:
                 raise RuntimeError("Training/deploy did not produce two deployed models required for AL.")
@@ -325,17 +597,33 @@ def main():
         if cycle_state["stage"] in {"al_done"}:
             al_selected_path = Path(cycle_state["al_selected_path"]).resolve()
             qm_workdir = cycle_dir / "qm"
-            qm_result = qm_calculation_node(
-                {
-                    "qm_input_extxyz": str(al_selected_path),
-                    "qm_orca_path": args.qm_orca_path,
-                    "qm_calc_type": args.qm_calc_type,
-                    "qm_calculator_type": args.qm_calculator_type,
-                    "qm_n_core": args.qm_n_core,
-                    "qm_workdir": str(qm_workdir),
-                }
-            )
-            qm_extxyz_path = Path(qm_result["qm_output_extxyz"]).resolve()
+            if args.qm_slurm_template.strip():
+                qm_template = Path(args.qm_slurm_template).resolve()
+                if not qm_template.exists():
+                    raise FileNotFoundError(f"QM Slurm template not found: {qm_template}")
+                qm_extxyz_path, _ = _run_qm_slurm(
+                    qm_input_extxyz=al_selected_path,
+                    qm_workdir=qm_workdir,
+                    qm_template=qm_template,
+                    qm_submit_jobs=args.qm_submit_jobs,
+                    qm_calc_type=args.qm_calc_type,
+                    qm_calculator_type=args.qm_calculator_type,
+                    qm_orca_path=args.qm_orca_path,
+                    qm_n_core=args.qm_n_core,
+                    poll_seconds=args.slurm_poll_seconds,
+                )
+            else:
+                qm_result = qm_calculation_node(
+                    {
+                        "qm_input_extxyz": str(al_selected_path),
+                        "qm_orca_path": args.qm_orca_path,
+                        "qm_calc_type": args.qm_calc_type,
+                        "qm_calculator_type": args.qm_calculator_type,
+                        "qm_n_core": args.qm_n_core,
+                        "qm_workdir": str(qm_workdir),
+                    }
+                )
+                qm_extxyz_path = Path(qm_result["qm_output_extxyz"]).resolve()
             cycle_state["qm_output_extxyz"] = str(qm_extxyz_path)
             cycle_state["stage"] = "qm_done"
             _save_json(cycle_state_path, cycle_state)

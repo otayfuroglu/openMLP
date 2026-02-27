@@ -233,6 +233,10 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
         exec_dir = workdir / f"train_exec_{seed_suffix}"
         exec_dir.mkdir(parents=True, exist_ok=True)
         model_exec_dirs.append(str(exec_dir))
+    if deploy_run and not run_training:
+        # Deploy-only mode is valid only if train outputs already exist.
+        pass
+
     if run_training:
         def _child_env(device: Optional[str]):
             if device is None:
@@ -294,9 +298,10 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
                 f"See log: {model_log_path}"
             )
 
-    for model_root_dir, model_run_name in zip(model_root_dirs, model_run_names):
-        model_run_dir = _resolve_train_dir(Path(model_root_dir), model_run_name)
-        model_run_dirs.append(str(model_run_dir))
+    if run_training or deploy_run:
+        for model_root_dir, model_run_name in zip(model_root_dirs, model_run_names):
+            model_run_dir = _resolve_train_dir(Path(model_root_dir), model_run_name)
+            model_run_dirs.append(str(model_run_dir))
 
     if deploy_run:
         for seed, model_run_dir in zip(model_seeds, model_run_dirs):
@@ -351,6 +356,9 @@ def train_nequip_node(state: PipelineState) -> PipelineState:
         "train_workdir": str(workdir),
         "train_log_path": model_log_paths[0],
         "train_model_log_paths": model_log_paths,
+        "train_model_commands": [" ".join(parts) for parts in model_cmd_parts],
+        "train_model_command_parts": model_cmd_parts,
+        "train_model_exec_dirs": model_exec_dirs,
         "train_model_run_dirs": model_run_dirs,
         "deployed_model_paths": deployed_model_paths,
         "notes": note,

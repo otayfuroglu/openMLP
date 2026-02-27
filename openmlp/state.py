@@ -38,6 +38,9 @@ class PipelineState(TypedDict, total=False):
     train_log_path: str
     train_model_config_paths: List[str]
     train_model_log_paths: List[str]
+    train_model_commands: List[str]
+    train_model_command_parts: List[List[str]]
+    train_model_exec_dirs: List[str]
     train_model_run_dirs: List[str]
     deployed_model_paths: List[str]
     al_input_structure: str
