@@ -144,9 +144,9 @@ def _run_qm_slurm(
     slurm_scripts_dir = qm_workdir / "slurm_scripts"
     for idx in range(1, int(qm_submit_jobs) + 1):
         marker_path = qm_workdir / f"qm_job_{idx:03d}.ok"
+        fail_marker_path = qm_workdir / f"qm_job_{idx:03d}.fail"
         log_path = qm_workdir / f"qm_job_{idx:03d}.log"
         cmd = (
-            f"set -euo pipefail\n"
             f"cd {shlex.quote(str(qm_workdir))}\n"
             f"{shlex.quote(str(qm_python_path))} {shlex.quote(str(runner_script))} "
             f"-in_extxyz {shlex.quote(str(qm_input_staged))} "
@@ -155,7 +155,13 @@ def _run_qm_slurm(
             f"-calculator_type {shlex.quote(str(qm_calculator_type))} "
             f"-n_core {int(qm_n_core)} "
             f"> {shlex.quote(str(log_path))} 2>&1\n"
-            f"touch {shlex.quote(str(marker_path))}"
+            "rc=$?\n"
+            "if [ \"$rc\" -eq 0 ]; then\n"
+            f"  touch {shlex.quote(str(marker_path))}\n"
+            "else\n"
+            f"  touch {shlex.quote(str(fail_marker_path))}\n"
+            "fi\n"
+            "exit \"$rc\""
         )
         job_script = _build_slurm_script(
             template_path=qm_template,
@@ -223,13 +229,19 @@ def _train_deploy_slurm(
     slurm_scripts_dir = train_workdir / "slurm_scripts"
     for idx, (parts, exec_dir) in enumerate(zip(command_parts_list, exec_dirs), start=1):
         marker_path = train_workdir / f"train_job_{idx:03d}.ok"
+        fail_marker_path = train_workdir / f"train_job_{idx:03d}.fail"
         log_path = train_workdir / f"train_job_{idx:03d}.log"
         cmd = (
-            f"set -euo pipefail\n"
             f"cd {shlex.quote(str(exec_dir))}\n"
             f"{' '.join(shlex.quote(str(part)) for part in parts)} "
             f"> {shlex.quote(str(log_path))} 2>&1\n"
-            f"touch {shlex.quote(str(marker_path))}"
+            "rc=$?\n"
+            "if [ \"$rc\" -eq 0 ]; then\n"
+            f"  touch {shlex.quote(str(marker_path))}\n"
+            "else\n"
+            f"  touch {shlex.quote(str(fail_marker_path))}\n"
+            "fi\n"
+            "exit \"$rc\""
         )
         job_script = _build_slurm_script(
             template_path=train_template,
